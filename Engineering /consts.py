@@ -3,6 +3,9 @@
 WIDTH, HEIGHT = 800, 600
 TILE_SIZE = 10
 
+NX = WIDTH // TILE_SIZE
+NY = HEIGHT // TILE_SIZE
+
 FPS = 30
 
 UNIT_RADIUS = 6
@@ -36,3 +39,19 @@ COLOR_HIGHLIGHT  = "yellow"
 
 MIN_TROOPS_PER_TEAM = 10
 
+def tile_color(t):
+    if t == T_DEEP_WATER:
+        return COLOR_DEEP_WATER
+    if t == T_RIVER:
+        return COLOR_RIVER
+    if t == T_BRIDGE:
+        return COLOR_BRIDGE
+    if t == T_PLAIN:
+        return COLOR_PLAIN
+    if t == T_FOREST:
+        return COLOR_FOREST
+    if t == T_MOUNTAIN:
+        return COLOR_MOUNTAIN
+    if t == T_LAKE:
+        return COLOR_LAKE
+    return "#000000"
