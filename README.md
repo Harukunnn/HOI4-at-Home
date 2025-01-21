@@ -1,5 +1,6 @@
 # HOI4-at-Home
-A concise, one-sentence description of what this project does and why it exists.
+
+A Python-based project inspired by Hearts of Iron 4 (HOI4) to simulate or replicate certain game elements in a local environment. This project aims to provide a platform for experimenting with HOI4-like mechanics, learning, or modding purposes—all from your own machine.
 
 ## Table of Contents
 
@@ -15,62 +16,93 @@ A concise, one-sentence description of what this project does and why it exists.
 - [Contact](#contact)
 - [Acknowledgments](#acknowledgments)
 
+---
+
 ## About the Project
 
-Provide a detailed description of your project here: 
-- What problem does it solve?
-- What is its main purpose or goal?
-- Any interesting background or context?
+**HOI4-at-Home** is designed for fans of Paradox Interactive's Hearts of Iron 4, or anyone interested in strategy game mechanics. By running a local Python environment, you can:
+- Experiment with gameplay logic similar to HOI4.
+- Modify or extend the code to test alternative features or balance changes.
+- Learn about AI decision-making, resource management, or event scripting in a simplified environment.
 
-If applicable, include screenshots or diagrams:
+Whether you are a modder, a game developer, or just curious, HOI4-at-Home offers a sandbox for exploration and learning.
 
-![Optional Screenshot](link-to-image)
+---
 
 ## Features
 
-List the main features or highlights of your project. For example:
-- Feature 1: Brief description
-- Feature 2: Brief description
-- Feature 3: Brief description
+- **Python-based Framework**: Easy to modify and extend using basic Python.
+- **Core Mechanics Simulation**: Manage resources, production, or other mechanics inspired by HOI4.
+- **Modular Design**: Add or remove features as you see fit.
+- **Community-Driven**: Contributions and suggestions are always welcome to shape the project’s roadmap.
+
+---
 
 ## Getting Started
 
-This section explains how to set up your project locally. If your project has any dependencies or requires special environment variables, mention them here.
+This section explains how to set up the project locally. If you encounter any issues, please open an [issue](https://github.com/Harukunnn/HOI4-at-Home/issues).
 
 ### Prerequisites
 
-What software or tools do users need before installing?
-- Python
+- **Python** (version 3.7 or higher is recommended)
+- A working terminal or command prompt
 
 ### Installation
 
-Detail the steps to install and set up the project:
-1. Clone the repository:
-   git clone https://github.com/your-username/your-repo.git
-2. Navigate to the project folder:
-   cd your-repo
-3. Install dependencies:
-   # Example for a Node.js project
-   npm install
-4. Any additional setup steps (e.g., creating a virtual environment, configuring environment variables, etc.)
+Follow these steps to install and set up the project:
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Harukunnn/HOI4-at-Home.git
+   ```
+
+2. **Navigate to the project folder**:
+   ```bash
+   cd HOI4-at-Home
+   ```
+
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *(If no `requirements.txt` exists, install relevant dependencies as needed.)*
+
+4. **Environment Setup** *(optional)*:
+   - Create and activate a virtual environment, if desired:
+     ```bash
+     python -m venv venv
+     source venv/bin/activate  # On Windows: venv\Scripts\activate
+     ```
+   - Configure any environment variables if the project requires them.
+
+---
 
 ### Usage
 
-Explain how to run and use the project. Examples:
-- How to start the development server.
-- How to build or deploy the project.
-- How to run tests.
+After installing the dependencies, you can start experimenting with HOI4-at-Home:
 
-# Example commands for a Node.js application
-npm start
-npm run test
+1. **Run the main script** (if provided):
+   ```bash
+   python main.py
+   ```
+2. **Run tests**:
+   ```bash
+   python -m unittest discover
+   ```
+3. Explore or modify code within the modules to customize game mechanics.
+
+---
 
 ## Roadmap
 
-If you have a planned feature roadmap or future enhancements, list them here:
-- [ ] Upcoming feature 1
-- [ ] Improvement on existing functionality
-- [ ] Other ideas or to-do items
+Below are planned features and areas of improvement. Feel free to suggest new ideas or tackle existing to-dos:
+
+- [ ] Add AI decision-making logic
+- [ ] Expand resource management and production modules
+- [ ] Implement events and scripted actions
+- [ ] Create a GUI or web-based interface for more intuitive control
+
+---
 
 ## Contributing
 
@@ -83,17 +115,25 @@ Contributions are welcome! To get started:
 
 Please read our [CONTRIBUTING.md](https://github.com/Harukunnn/HOI4-at-Home/blob/4c844a302ae5b44e55e45ab28e1029b98d05801c/CONTRIBUTING.md) for detailed guidelines.
 
+---
+
 ## License
 
 Distributed under the [MIT License](LICENSE). See `LICENSE` for more information.
 
+---
+
 ## Contact
 
-Your Name – Florian Pillot
-Project Link: https://github.com/Harukunnn/HOI4-at-Home/tree/main?tab=readme-ov-file#about-the-project
+**Author**: Florian Pillot  
+**Project Link**: [HOI4-at-Home](https://github.com/Harukunnn/HOI4-at-Home/tree/main?tab=readme-ov-file#about-the-project)
+
+If you have any questions or suggestions, feel free to open an issue or submit a pull request.
+
+---
 
 ## Acknowledgments
 
-- Mention any resources, inspirations, or code snippets you used.
-- Thank contributors or third-party services.
-- Link to any related projects.
+- Paradox Interactive for the inspiration behind game mechanics.
+- The Python community for providing useful libraries and resources.
+- All contributors who have helped improve this project with ideas, code, or feedback.
