@@ -9,17 +9,51 @@ from Engineering.consts import (
     FPS, INITIAL_DELAY, CAPTURE_TIME,
     T_PLAIN, UNIT_RADIUS, STAR_SIZE,
     COLOR_BLUE, COLOR_RED, COLOR_HIGHLIGHT,
-    ENCIRCLED_TICK_LIMIT
+    ENCIRCLED_TICK_LIMIT, T_MOUNTAIN, T_LAKE, T_RIVER
 )
 from Engineering.generation import generate_map
 from Engineering.pathfinding import in_bounds
 from Engineering.front import generate_initial_front, add_front_points_on_cross, check_side
-from Engineering.units import Unit, AI
+from Engineering.units import Unit, AI, distance
+from collections import deque
+
+
+def compute_team_zone(grid, cap, forbidden):
+    (cx, cy) = cap
+    if not in_bounds(cx, cy):
+        return set()
+    visited = set()
+    visited.add((cx, cy))
+    q = deque()
+    q.append((cx, cy))
+    while q:
+        x, y = q.popleft()
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            nx_ = x + dx
+            ny_ = y + dy
+            if in_bounds(nx_, ny_):
+                if (nx_, ny_) not in visited:
+                    if (nx_, ny_) not in forbidden:
+                        visited.add((nx_, ny_))
+                        q.append((nx_, ny_))
+    return visited
+
+
+def forbidden_mountain_lake_river(grid):
+    forb = set()
+    ny = len(grid)
+    nx = len(grid[0])
+    for y in range(ny):
+        for x in range(nx):
+            if grid[y][x] in (T_MOUNTAIN, T_LAKE, T_RIVER):
+                forb.add((x, y))
+    return forb
+
 
 class HOI4FrontInvisibleGame:
     def __init__(self, root):
         self.root = root
-        self.root.title("HOI4 splitted + Victory Animation")
+        self.root.title("HOI4 - kill all or capture capital, custom placement + is_unit_in_enemy_zone fix")
 
         self.top_frame = tk.Frame(self.root, bg="#444444")
         self.top_frame.pack(side="top", fill="x")
@@ -27,7 +61,7 @@ class HOI4FrontInvisibleGame:
         quit_btn = tk.Button(self.top_frame, text="Quitter", command=self.quit_game, fg="white", bg="#AA0000")
         quit_btn.pack(side="left", padx=5, pady=2)
 
-        self.info_label = tk.Label(self.top_frame, text="HOI4 splitted", fg="white", bg="#444444", font=("Arial",12,"bold"))
+        self.info_label = tk.Label(self.top_frame, text="HOI4 splitted", fg="white", bg="#444444", font=("Arial", 12, "bold"))
         self.info_label.pack(side="left", padx=5)
 
         self.canvas = tk.Canvas(self.root, width=WIDTH, height=HEIGHT, bg="white")
@@ -40,48 +74,45 @@ class HOI4FrontInvisibleGame:
         self.canvas.bind("<KeyPress-Shift_L>", lambda e: self.set_shift(True))
         self.canvas.bind("<KeyRelease-Shift_L>", lambda e: self.set_shift(False))
 
-        # Génération de la carte
         self.grid = generate_map(NX, NY)
 
-        # Capitales
-        self.blue_cap = (3, NY//2)
-        self.red_cap  = (NX-4, NY//2)
+        self.blue_cap = (3, NY // 2)
+        self.red_cap = (NX - 4, NY // 2)
         self.grid[self.blue_cap[1]][self.blue_cap[0]] = T_PLAIN
-        self.grid[self.red_cap[1]][self.red_cap[0]]   = T_PLAIN
+        self.grid[self.red_cap[1]][self.red_cap[0]] = T_PLAIN
 
-        # Création d’unités
-        self.blue_units = self.create_units_around_cap(self.blue_cap, "blue")
-        self.red_units  = self.create_units_around_cap(self.red_cap, "red")
-        self.all_units  = self.blue_units + self.red_units
+        self.blue_units = []
+        self.red_units = []
+        self.create_initial_units("blue", 10)
+        self.create_initial_units("red", 10)
 
+        self.all_units = self.blue_units + self.red_units
         self.ai_red = AI("red")
 
-        # État du jeu
         self.running = True
         self.frame_count = 0
         self.selected_units = []
         self.dragging = False
-        self.drag_start = (0,0)
-        self.drag_end   = (0,0)
+        self.drag_start = (0, 0)
+        self.drag_end = (0, 0)
+        self.victory_label = None
 
-        # Chrono
         self.start_time = time.time()
         self.game_started = False
         self.play_start_time = 0
 
-        # Ligne de front
         self.front_points = generate_initial_front(num_points=25)
 
-        # Timer capture capital
-        self.cap_red_timer  = 0.0
+        self.cap_red_timer = 0.0
         self.cap_blue_timer = 0.0
 
-        # Label/mécanisme de victoire
-        self.victory_label = None
-        self.victory_mode  = False  # pour savoir si on est en animation de victoire
-        self.victory_phase = 0      # pour animer (clignoter)
+        self.placement_phase = True
 
-        # Binds souris
+        self.blue_zone = compute_team_zone(self.grid, self.blue_cap, forbidden_mountain_lake_river(self.grid))
+        self.red_zone = compute_team_zone(self.grid, self.red_cap, forbidden_mountain_lake_river(self.grid))
+
+        self.ai_place_red_units()
+
         self.canvas.bind("<Button-1>", self.on_left_press)
         self.canvas.bind("<B1-Motion>", self.on_left_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_left_release)
@@ -89,366 +120,331 @@ class HOI4FrontInvisibleGame:
 
         self.game_loop()
 
-    def set_shift(self,val):
-        self.shift_held=val
+    def is_unit_in_enemy_zone(self, unit):
+        # Simplement : on regarde le "side" par rapport à self.front_points
+        side = check_side(self.front_points, unit.x, unit.y)
+        if unit.team == "blue":
+            return (side == "left")
+        else:
+            return (side == "right")
+
+    def create_initial_units(self, team, number):
+        cx, cy = (self.blue_cap if team == "blue" else self.red_cap)
+        for _ in range(number):
+            px = cx * TILE_SIZE + TILE_SIZE / 2
+            py = cy * TILE_SIZE + TILE_SIZE / 2
+            u = Unit(px, py, team)
+            if team == "blue":
+                self.blue_units.append(u)
+            else:
+                self.red_units.append(u)
+
+    def set_shift(self, val):
+        self.shift_held = val
 
     def quit_game(self):
-        # simple close
-        self.running=False
+        self.running = False
         self.root.quit()
 
-    def create_units_around_cap(self, cap, team):
-        units=[]
-        placed=0
-        from Engineering.consts import MIN_TROOPS_PER_TEAM
-        (cx,cy) = cap
-        while placed<MIN_TROOPS_PER_TEAM:
-            rx = random.randint(-3,3)
-            ry = random.randint(-3,3)
-            tx = cx+rx
-            ty = cy+ry
-            if in_bounds(tx,ty):
-                if self.grid[ty][tx] == T_PLAIN:
-                    px = tx*TILE_SIZE + TILE_SIZE/2
-                    py = ty*TILE_SIZE + TILE_SIZE/2
-                    u  = Unit(px,py,team)
-                    units.append(u)
-                    placed+=1
-        return units
+    def ai_place_red_units(self):
+        if not self.red_zone or not self.red_units:
+            return
+        bx = sum([u.x for u in self.blue_units]) / len(self.blue_units)
+        tile_bx = int(bx // TILE_SIZE)
+        zone_list = list(self.red_zone)
+        if tile_bx < NX // 2:
+            zone_list.sort(key=lambda p: p[0], reverse=True)
+        else:
+            zone_list.sort(key=lambda p: p[0])
+        i = 0
+        for u in self.red_units:
+            if i < len(zone_list):
+                tx, ty = zone_list[i]
+                i += 1
+                u.x = tx * TILE_SIZE + TILE_SIZE / 2
+                u.y = ty * TILE_SIZE + TILE_SIZE / 2
 
     def game_loop(self):
         if not self.running:
             return
+        self.frame_count += 1
+        now = time.time()
+        dt = now - self.start_time
+        if dt >= INITIAL_DELAY and self.placement_phase:
+            self.placement_phase = False
+            self.game_started = True
+            self.play_start_time = time.time()
 
-        self.frame_count+=1
-        now=time.time()
-        if not self.game_started:
-            if now-self.start_time>=INITIAL_DELAY:
-                self.game_started=True
-                self.play_start_time=time.time()
-            movement_allowed=False
-        else:
-            movement_allowed=True
+        movement_allowed = (not self.placement_phase)
 
-        # Si on est en "victoire", on continue juste l'animation
-        if not self.victory_mode:
+        if self.game_started:
             self.ai_red.update(self, movement_allowed)
-            for u in self.all_units:
-                u.update(self, self.all_units, self.grid, movement_allowed)
-                if self.cross_front(u):
-                    self.front_points=add_front_points_on_cross(self.front_points, u.x,u.y)
 
-            dead=[]
-            for u in self.all_units:
-                if u.encircled_ticks>ENCIRCLED_TICK_LIMIT:
-                    dead.append(u)
-            for du in dead:
+        self.resolve_combat()
+        for u in self.all_units:
+            # On passe self => on l'utilise dans u.update
+            u.update(self, self.all_units, self.grid, movement_allowed)
+
+        dead = []
+        for u in self.all_units:
+            if u.encircled_ticks > ENCIRCLED_TICK_LIMIT:
+                dead.append(u)
+            if u.hp <= 0:
+                dead.append(u)
+        for du in dead:
+            if du in self.all_units:
                 self.all_units.remove(du)
-                if du in self.blue_units:
-                    self.blue_units.remove(du)
-                else:
+                if du in self.red_units:
                     self.red_units.remove(du)
+                else:
+                    self.blue_units.remove(du)
                 if du in self.selected_units:
                     self.selected_units.remove(du)
 
-            self.check_victory()
-
+        self.check_victory()
         self.draw()
-        if self.victory_mode:
-            self.victory_phase=(self.victory_phase+1)%60  # pour clignoter
-        from Engineering.consts import FPS
-        self.root.after(int(1000/FPS), self.game_loop)
+        if self.running:
+            self.root.after(int(1000 / FPS), self.game_loop)
+
+    def resolve_combat(self):
+        for u in self.all_units:
+            enemy_count = 0
+            ally_count = 0
+            for v in self.all_units:
+                if v is not u:
+                    d = distance(u.x, u.y, v.x, v.y)
+                    if d < 80:
+                        if v.team != u.team:
+                            enemy_count += 1
+                        else:
+                            ally_count += 1
+            if enemy_count > ally_count and enemy_count > 0:
+                dmg = 5
+                if u.encircled_ticks > 0:
+                    dmg = 10
+                u.attack_tick = dmg
 
     def draw(self):
         self.canvas.delete("all")
-
-        from Engineering.consts import tile_color, NX, NY, TILE_SIZE
+        from Engineering.consts import tile_color
         for y in range(NY):
             for x in range(NX):
-                c=tile_color(self.grid[y][x])
+                c = tile_color(self.grid[y][x])
                 self.canvas.create_rectangle(
-                    x*TILE_SIZE, y*TILE_SIZE,
-                    (x+1)*TILE_SIZE, (y+1)*TILE_SIZE,
-                    fill=c, outline=""
+                    x * TILE_SIZE,
+                    y * TILE_SIZE,
+                    (x + 1) * TILE_SIZE,
+                    (y + 1) * TILE_SIZE,
+                    fill=c,
+                    outline=""
                 )
+        rpx = self.red_cap[0] * TILE_SIZE + TILE_SIZE / 2
+        rpy = self.red_cap[1] * TILE_SIZE + TILE_SIZE / 2
+        bpx = self.blue_cap[0] * TILE_SIZE + TILE_SIZE / 2
+        bpy = self.blue_cap[1] * TILE_SIZE + TILE_SIZE / 2
+        self.draw_star(rpx, rpy, STAR_SIZE, COLOR_RED)
+        self.draw_star(bpx, bpy, STAR_SIZE, COLOR_BLUE)
 
-        (rx,ry)=self.red_cap
-        (bx,by)=self.blue_cap
-        rpx=rx*TILE_SIZE+TILE_SIZE/2
-        rpy=ry*TILE_SIZE+TILE_SIZE/2
-        bpx=bx*TILE_SIZE+TILE_SIZE/2
-        bpy=by*TILE_SIZE+TILE_SIZE/2
-
-        from Engineering.consts import COLOR_RED, COLOR_BLUE
-        self.draw_star(rpx,rpy,STAR_SIZE,COLOR_RED)
-        self.draw_star(bpx,bpy,STAR_SIZE,COLOR_BLUE)
-
-        for u in self.all_units:
-            self.draw_unit(u)
-
-        if len(self.front_points)>1:
-            coords=[]
+        if len(self.front_points) > 1:
+            coords = []
             for p in self.front_points:
                 coords.append(p[0])
                 coords.append(p[1])
             self.canvas.create_line(coords, fill="black", width=6, smooth=True)
 
-        self.canvas.create_rectangle(0,0,160,70, fill="#222222", outline="#666666", width=2)
-        from Engineering.consts import INITIAL_DELAY, CAPTURE_TIME
-        if not self.game_started:
-            left=INITIAL_DELAY-(time.time()-self.start_time)
-            if left<0:left=0
-            txt=f"Début dans {int(left)} s"
-            self.canvas.create_text(10,10, text=txt, anchor="nw", fill="white", font=("Helvetica",16,"bold"))
+        for u in self.all_units:
+            self.draw_unit(u)
+
+        self.canvas.create_rectangle(0, 0, 190, 80, fill="#222222", outline="#666666", width=2)
+        if self.placement_phase:
+            left = INITIAL_DELAY - (time.time() - self.start_time)
+            if left < 0:
+                left = 0
+            txt = f"Placement : {int(left)}s"
+            self.canvas.create_text(10, 10, text=txt, anchor="nw", fill="white", font=("Arial", 14, "bold"))
         else:
-            e=time.time()-self.play_start_time
-            txt=f"Time : {int(e)} s"
-            self.canvas.create_text(10,10, text=txt, anchor="nw", fill="white", font=("Helvetica",16,"bold"))
-            if self.cap_red_timer>0:
-                leftC=CAPTURE_TIME-self.cap_red_timer
-                if leftC<0:leftC=0
-                self.canvas.create_text(10,30, text=f"RedCap => {int(leftC)}s", anchor="nw", fill="red", font=("Helvetica",12,"bold"))
-            if self.cap_blue_timer>0:
-                leftC=CAPTURE_TIME-self.cap_blue_timer
-                if leftC<0:leftC=0
-                self.canvas.create_text(10,50, text=f"BlueCap => {int(leftC)}s", anchor="nw", fill="blue", font=("Helvetica",12,"bold"))
+            e = time.time() - self.play_start_time
+            txt = f"Time : {int(e)}s"
+            self.canvas.create_text(10, 10, text=txt, anchor="nw", fill="white", font=("Arial", 14, "bold"))
+
+        if self.cap_red_timer > 0:
+            leftC = CAPTURE_TIME - self.cap_red_timer
+            if leftC < 0:
+                leftC = 0
+            self.canvas.create_text(10, 30, text=f"RedCap => {int(leftC)}s", anchor="nw", fill="red", font=("Arial", 12, "bold"))
+        if self.cap_blue_timer > 0:
+            leftC = CAPTURE_TIME - self.cap_blue_timer
+            if leftC < 0:
+                leftC = 0
+            self.canvas.create_text(10, 50, text=f"BlueCap => {int(leftC)}s", anchor="nw", fill="blue", font=("Arial", 12, "bold"))
 
         if self.victory_label:
-            from Engineering.consts import WIDTH, HEIGHT
-            # petite animation de clignotement
-            alpha=1.0
-            if (self.victory_phase<30):
-                alpha=1.0
-            else:
-                alpha=0.3
-            # on peut changer la couleur ou la taille
-            color = f"#{int(alpha*255):02x}{int(alpha*255):02x}00"
             self.canvas.create_text(
-                WIDTH//2, HEIGHT//2,
+                WIDTH // 2, HEIGHT // 2,
                 text=self.victory_label,
-                fill=color,
-                font=("Helvetica",28,"bold"),
+                fill="yellow",
+                font=("Arial", 24, "bold"),
                 anchor="center"
             )
 
         if self.dragging:
-            sx,sy=self.drag_start
-            ex,ey=self.drag_end
-            self.canvas.create_rectangle(sx,sy,ex,ey, outline="yellow", width=2, dash=(4,4))
+            sx, sy = self.drag_start
+            ex, ey = self.drag_end
+            self.canvas.create_rectangle(sx, sy, ex, ey, outline="yellow", width=2, dash=(4, 4))
 
     def draw_unit(self, u):
-        from Engineering.consts import UNIT_RADIUS, COLOR_RED, COLOR_BLUE, COLOR_HIGHLIGHT, TILE_SIZE
-        color = COLOR_BLUE if u.team=="blue" else COLOR_RED
+        color = (COLOR_BLUE if u.team == "blue" else COLOR_RED)
         self.canvas.create_oval(
-            u.x-UNIT_RADIUS, u.y-UNIT_RADIUS,
-            u.x+UNIT_RADIUS, u.y+UNIT_RADIUS,
+            u.x - UNIT_RADIUS, u.y - UNIT_RADIUS,
+            u.x + UNIT_RADIUS, u.y + UNIT_RADIUS,
             fill=color, outline=""
         )
         if u.is_selected:
             self.canvas.create_oval(
-                u.x-(UNIT_RADIUS+2), u.y-(UNIT_RADIUS+2),
-                u.x+(UNIT_RADIUS+2), u.y+(UNIT_RADIUS+2),
+                u.x - (UNIT_RADIUS + 2), u.y - (UNIT_RADIUS + 2),
+                u.x + (UNIT_RADIUS + 2), u.y + (UNIT_RADIUS + 2),
                 outline=COLOR_HIGHLIGHT, width=2
             )
-        if u.team=="blue" and u.dest_tile:
-            tx,ty=u.dest_tile
-            px=tx*TILE_SIZE+TILE_SIZE/2
-            py=ty*TILE_SIZE+TILE_SIZE/2
-            self.draw_arrow(u.x,u.y, px,py)
+        # HP
+        bar_w = 30
+        bar_h = 4
+        leftx = u.x - bar_w / 2
+        topy = u.y - UNIT_RADIUS - 10
+        ratio = u.hp / 100
+        if ratio < 0:
+            ratio = 0
+        self.canvas.create_rectangle(leftx, topy, leftx + bar_w, topy + bar_h, fill="#444444")
+        self.canvas.create_rectangle(leftx, topy, leftx + bar_w * ratio, topy + bar_h, fill="green")
 
-    def draw_star(self,cx,cy,size,color):
+        if u.team == "blue" and u.dest_tile:
+            tx, ty = u.dest_tile
+            px = tx * TILE_SIZE + TILE_SIZE / 2
+            py = ty * TILE_SIZE + TILE_SIZE / 2
+            self.draw_arrow(u.x, u.y, px, py)
+
+    def draw_star(self, cx, cy, size, color):
         import math
-        self.canvas.create_rectangle(cx-size-5, cy-size-5, cx+size+5, cy+size+5, outline="black", width=2)
-        points=[]
-        nb=5
-        for i in range(nb*2):
-            angle=i*math.pi/nb
-            r=size if i%2==0 else size/2
-            px=cx+math.cos(angle)*r
-            py=cy+math.sin(angle)*r
-            points.append((px,py))
-        fl=[]
-        for (px,py) in points:
+        pts = []
+        nb = 5
+        for i in range(nb * 2):
+            angle = i * math.pi / nb
+            r = size if i % 2 == 0 else size / 2
+            px = cx + math.cos(angle) * r
+            py = cy + math.sin(angle) * r
+            pts.append((px, py))
+        fl = []
+        for (px, py) in pts:
             fl.append(px)
             fl.append(py)
+        self.canvas.create_rectangle(cx - size - 5, cy - size - 5, cx + size + 5, cy + size + 5, outline="black", width=2)
         self.canvas.create_polygon(fl, fill=color, outline=color)
 
-    def draw_arrow(self,x0,y0,x1,y1):
-        self.canvas.create_line(x0,y0,x1,y1, fill="black", width=2, smooth=True)
+    def draw_arrow(self, x0, y0, x1, y1):
+        self.canvas.create_line(x0, y0, x1, y1, fill="black", width=2, smooth=True)
         import math
-        angle=math.atan2(y1-y0,x1-x0)
-        arr_len=10
-        arr_angle=math.radians(20)
-        xA=x1-arr_len*math.cos(angle-arr_angle)
-        yA=y1-arr_len*math.sin(angle-arr_angle)
-        xB=x1-arr_len*math.cos(angle+arr_angle)
-        yB=y1-arr_len*math.sin(angle+arr_angle)
-        self.canvas.create_polygon([(x1,y1),(xA,yA),(xB,yB)], fill="black")
+        angle = math.atan2(y1 - y0, x1 - x0)
+        arr_len = 10
+        arr_angle = math.radians(20)
+        xA = x1 - arr_len * math.cos(angle - arr_angle)
+        yA = y1 - arr_len * math.sin(angle - arr_angle)
+        xB = x1 - arr_len * math.cos(angle + arr_angle)
+        yB = y1 - arr_len * math.sin(angle + arr_angle)
+        self.canvas.create_polygon([(x1, y1), (xA, yA), (xB, yB)], fill="black")
 
-    def on_left_press(self,event):
-        self.dragging=True
-        self.drag_start=(event.x,event.y)
-        self.drag_end=(event.x,event.y)
+    def on_left_press(self, event):
+        self.dragging = True
+        self.drag_start = (event.x, event.y)
+        self.drag_end = (event.x, event.y)
 
-    def on_left_drag(self,event):
+    def on_left_drag(self, event):
         if self.dragging:
-            self.drag_end=(event.x,event.y)
+            self.drag_end = (event.x, event.y)
 
-    def on_left_release(self,event):
+    def on_left_release(self, event):
         if not self.dragging:
             return
-        self.dragging=False
-        sx,sy=self.drag_start
-        ex,ey=(event.x,event.y)
-        dx=abs(ex-sx)
-        dy=abs(ey-sy)
-        if dx<3 and dy<3:
-            self.handle_click(event.x,event.y)
+        self.dragging = False
+        sx, sy = self.drag_start
+        ex, ey = (event.x, event.y)
+        dx = abs(ex - sx)
+        dy = abs(ey - sy)
+        if dx < 3 and dy < 3:
+            self.handle_click(event.x, event.y)
         else:
-            x1,x2=sorted([sx,ex])
-            y1,y2=sorted([sy,ey])
+            x1, x2 = sorted([sx, ex])
+            y1, y2 = sorted([sy, ey])
             if not self.shift_held:
                 self.clear_selection()
             for u in self.blue_units:
-                if x1<=u.x<=x2 and y1<=u.y<=y2:
-                    u.is_selected=True
+                if x1 <= u.x <= x2 and y1 <= u.y <= y2:
+                    u.is_selected = True
                     if u not in self.selected_units:
                         self.selected_units.append(u)
 
-    def handle_click(self,mx,my):
+    def handle_click(self, mx, my):
         import math
-        from Engineering.consts import UNIT_RADIUS
-        clicked_unit=None
+        clicked_unit = None
         for u in self.all_units:
-            if math.hypot(u.x-mx, u.y-my)<=UNIT_RADIUS+2:
-                clicked_unit=u
+            if math.hypot(u.x - mx, u.y - my) <= UNIT_RADIUS + 2:
+                clicked_unit = u
                 break
         if clicked_unit:
-            if not self.shift_held:
-                self.clear_selection()
-            if clicked_unit.team=="blue":
-                clicked_unit.is_selected=True
-                if clicked_unit not in self.selected_units:
-                    self.selected_units.append(clicked_unit)
-            else:
+            if clicked_unit.team != "blue":
                 if self.selected_units:
                     for su in self.selected_units:
-                        su.target_enemy=clicked_unit
-                        su.path=[]
-                        su.dest_tile=None
+                        su.target_enemy = clicked_unit
+                        su.path = []
+                        su.dest_tile = None
+            else:
+                if not self.shift_held:
+                    self.clear_selection()
+                clicked_unit.is_selected = True
+                if clicked_unit not in self.selected_units:
+                    self.selected_units.append(clicked_unit)
         else:
-            from Engineering.pathfinding import find_path_bfs
-            tx=mx//TILE_SIZE
-            ty=my//TILE_SIZE
-            if self.selected_units:
-                for su in self.selected_units:
-                    su.target_enemy=None
-                    sx,sy=su.get_tile_pos()
-                    su.path=find_path_bfs(self.grid,(sx,sy),(tx,ty))
-                    su.dest_tile=(tx,ty)
+            tx = mx // TILE_SIZE
+            ty = my // TILE_SIZE
+            if self.placement_phase:
+                if (tx, ty) in self.blue_zone:
+                    for su in self.selected_units:
+                        su.x = tx * TILE_SIZE + TILE_SIZE / 2
+                        su.y = ty * TILE_SIZE + TILE_SIZE / 2
+            else:
+                if self.selected_units:
+                    from Engineering.pathfinding import find_path_bfs
+                    for su in self.selected_units:
+                        su.target_enemy = None
+                        sx, sy = su.get_tile_pos()
+                        su.path = find_path_bfs(self.grid, (sx, sy), (tx, ty))
+                        su.dest_tile = (tx, ty)
 
-    def on_right_click(self,event):
+    def on_right_click(self, event):
         self.clear_selection()
 
     def clear_selection(self):
         for u in self.selected_units:
-            u.is_selected=False
-        self.selected_units=[]
-
-    def cross_front(self, unit):
-        old_side = getattr(unit,"front_side",None)
-        new_side = check_side(self.front_points, unit.x, unit.y)
-        unit.front_side=new_side
-        if old_side and old_side!=new_side:
-            return True
-        return False
-
-    def is_unit_in_enemy_zone(self, unit):
-        side=check_side(self.front_points, unit.x, unit.y)
-        if unit.team=="blue":
-            return (side=="left")
-        else:
-            return (side=="right")
-
-    def update_capital_capture(self, unit):
-        import math
-        from Engineering.consts import UNIT_RADIUS, FPS, TILE_SIZE
-        if unit.team=="blue":
-            rx,ry=self.red_cap
-            rpx=rx*TILE_SIZE+TILE_SIZE/2
-            rpy=ry*TILE_SIZE+TILE_SIZE/2
-            d=math.hypot(unit.x-rpx, unit.y-rpy)
-            if d<UNIT_RADIUS+5:
-                if not self.is_enemy_on_capital("red"):
-                    unit.cap_capture_time+=1.0/FPS
-                    if unit.cap_capture_time>self.cap_red_timer:
-                        self.cap_red_timer=unit.cap_capture_time
-                else:
-                    unit.cap_capture_time=0
-            else:
-                unit.cap_capture_time=0
-        else:
-            bx,by=self.blue_cap
-            bpx=bx*TILE_SIZE+TILE_SIZE/2
-            bpy=by*TILE_SIZE+TILE_SIZE/2
-            d=math.hypot(unit.x-bpx, unit.y-bpy)
-            if d<UNIT_RADIUS+5:
-                if not self.is_enemy_on_capital("blue"):
-                    unit.cap_capture_time+=1.0/FPS
-                    if unit.cap_capture_time>self.cap_blue_timer:
-                        self.cap_blue_timer=unit.cap_capture_time
-                else:
-                    unit.cap_capture_time=0
-            else:
-                unit.cap_capture_time=0
-
-    def is_enemy_on_capital(self, cap_team):
-        import math
-        from Engineering.consts import UNIT_RADIUS, TILE_SIZE
-        if cap_team=="red":
-            rx,ry=self.red_cap
-            rpx=rx*TILE_SIZE+TILE_SIZE/2
-            rpy=ry*TILE_SIZE+TILE_SIZE/2
-            for u in self.red_units:
-                if math.hypot(u.x-rpx, u.y-rpy)<UNIT_RADIUS+5:
-                    return True
-            return False
-        else:
-            bx,by=self.blue_cap
-            bpx=bx*TILE_SIZE+TILE_SIZE/2
-            bpy=by*TILE_SIZE+TILE_SIZE/2
-            for u in self.blue_units:
-                if math.hypot(u.x-bpx, u.y-bpy)<UNIT_RADIUS+5:
-                    return True
-            return False
+            u.is_selected = False
+        self.selected_units = []
 
     def check_victory(self):
         if not self.blue_units:
-            self.show_victory_animation("Victoire Rouge (plus d'unités bleues)!")
-            return
+            self.victory_label = "Victoire Rouge (plus de bleus)!"
         if not self.red_units:
-            self.show_victory_animation("Victoire Bleue (plus d'unités rouges)!")
-            return
-        if self.cap_red_timer>=CAPTURE_TIME:
-            self.show_victory_animation("Victoire Bleue (capitale rouge capturée)!")
-            return
-        if self.cap_blue_timer>=CAPTURE_TIME:
-            self.show_victory_animation("Victoire Rouge (capitale bleue capturée)!")
-            return
-
-    def show_victory_animation(self, msg):
-        self.victory_label = msg
-        self.victory_mode  = True
-        self.victory_phase = 0
+            self.victory_label = "Victoire Bleue (plus de rouges)!"
+        if self.cap_red_timer >= CAPTURE_TIME:
+            self.victory_label = "Victoire Bleue (capitale rouge)!"
+        if self.cap_blue_timer >= CAPTURE_TIME:
+            self.victory_label = "Victoire Rouge (capitale bleue)!"
 
     def stop_game(self):
-        self.running=False
+        self.running = False
         self.root.quit()
 
+
 def main():
-    root=tk.Tk()
-    game=HOI4FrontInvisibleGame(root)
+    root = tk.Tk()
+    game = HOI4FrontInvisibleGame(root)
     root.mainloop()
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
