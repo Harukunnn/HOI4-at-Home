@@ -86,14 +86,12 @@ Please read our [CONTRIBUTING.md](link-to-contributing-doc) for detailed guideli
 
 ## License
 
-Distribute your project under a license of your choice (e.g., MIT, Apache, GPL). Update the badge and link if needed.
-
 Distributed under the [MIT License](LICENSE). See `LICENSE` for more information.
 
 ## Contact
 
-Your Name – [Your Email](mailto:your-email@example.com)  
-Project Link: [https://github.com/your-username/your-repo](https://github.com/your-username/your-repo)
+Your Name – Florian Pillot
+Project Link: https://github.com/Harukunnn/HOI4-at-Home/tree/main?tab=readme-ov-file#about-the-project
 
 ## Acknowledgments
 
