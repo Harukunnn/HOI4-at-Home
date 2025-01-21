@@ -1,12 +1,12 @@
 # Engineering/units.py
+
 import math
-from .pathfinding import find_path_bfs, distance, in_bounds
+from .pathfinding import find_path_bfs, distance
 from .consts import (
     MOVE_SPEED, WATER_SLOW_FACTOR, ENCIRCLED_TICK_LIMIT,
     T_DEEP_WATER, T_LAKE, T_RIVER,
-    TILE_SIZE, UNIT_RADIUS
+    TILE_SIZE, UNIT_RADIUS, FPS
 )
-from .consts import FPS
 
 class Unit:
     def __init__(self, x, y, team):
@@ -32,7 +32,6 @@ class Unit:
         if not movement_allowed:
             return
 
-        # collisions
         for u in all_units:
             if u is not self:
                 d = distance(self.x, self.y, u.x, u.y)
@@ -49,7 +48,6 @@ class Unit:
         if self.blocked:
             return
 
-        # IA chase
         if self.target_enemy:
             if self.target_enemy not in all_units:
                 self.target_enemy = None
@@ -62,28 +60,21 @@ class Unit:
                     ex,ey = self.target_enemy.get_tile_pos()
                     sx,sy = self.get_tile_pos()
                     newp = find_path_bfs(grid,(sx,sy),(ex,ey))
-                    self.path = newp
+                    self.path=newp
                     self.dest_tile=(ex,ey)
 
-        # move with water slow
         if self.path:
-            (tx,ty) = self.path[0]
-            from .consts import TILE_SIZE
-            from .consts import MOVE_SPEED
-            from .consts import T_DEEP_WATER, T_LAKE, T_RIVER
-
-            (px,py) = (tx*TILE_SIZE + TILE_SIZE/2, ty*TILE_SIZE + TILE_SIZE/2)
+            (tx,ty)=self.path[0]
+            px = tx*TILE_SIZE + TILE_SIZE/2
+            py = ty*TILE_SIZE + TILE_SIZE/2
             dx = px - self.x
             dy = py - self.y
-            dist_ = math.hypot(dx, dy)
-
-            # Check terrain => water => slow
+            dist_ = math.hypot(dx,dy)
             t = grid[ty][tx]
             if t in (T_DEEP_WATER, T_LAKE, T_RIVER):
                 step = (MOVE_SPEED*WATER_SLOW_FACTOR)*TILE_SIZE
             else:
-                step = (MOVE_SPEED)*TILE_SIZE
-
+                step = MOVE_SPEED*TILE_SIZE
             if dist_>step:
                 self.x += (dx/dist_)*step
                 self.y += (dy/dist_)*step
@@ -94,13 +85,11 @@ class Unit:
                 if not self.path:
                     self.dest_tile=None
 
-        # encirclement
         if game.is_unit_in_enemy_zone(self):
             self.encircled_ticks += 1
         else:
             self.encircled_ticks = 0
 
-        # capture capital
         game.update_capital_capture(self)
 
 class AI:
@@ -128,16 +117,11 @@ class AI:
                 u.target_enemy=None
                 u.blocked=False
                 continue
-            # plus proche
             bestd=999999
             bestf=None
             for f in foes:
-                d = distance(u.x,u.y,f.x,f.y)
+                d=distance(u.x,u.y,f.x,f.y)
                 if d<bestd:
                     bestd=d
                     bestf=f
             u.target_enemy=bestf
-
-#
-# Fin units.py
-
