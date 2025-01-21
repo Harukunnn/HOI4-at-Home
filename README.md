@@ -40,8 +40,7 @@ This section explains how to set up your project locally. If your project has an
 ### Prerequisites
 
 What software or tools do users need before installing?
-- **Example**: Node.js, Python, Docker, etc.
-- **Version requirements**, if any.
+- Python
 
 ### Installation
 
