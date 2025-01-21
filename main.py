@@ -14,102 +14,100 @@ from Engineering.consts import (
 from Engineering.generation import generate_map
 from Engineering.pathfinding import in_bounds
 from Engineering.front import generate_initial_front, add_front_points_on_cross, check_side
+# => on n'importe plus BFS si on n'en a plus besoin
 from Engineering.units import Unit, AI, distance
 from collections import deque
 
-
 def compute_team_zone(grid, cap, forbidden):
-    (cx, cy) = cap
+    (cx, cy)=cap
     if not in_bounds(cx, cy):
         return set()
-    visited = set()
+    visited=set()
     visited.add((cx, cy))
-    q = deque()
+    q=deque()
     q.append((cx, cy))
     while q:
-        x, y = q.popleft()
-        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-            nx_ = x + dx
-            ny_ = y + dy
+        x,y=q.popleft()
+        for (dx,dy) in [(1,0),(-1,0),(0,1),(0,-1)]:
+            nx_=x+dx
+            ny_=y+dy
             if in_bounds(nx_, ny_):
-                if (nx_, ny_) not in visited:
-                    if (nx_, ny_) not in forbidden:
-                        visited.add((nx_, ny_))
-                        q.append((nx_, ny_))
+                if (nx_,ny_) not in visited:
+                    if (nx_,ny_) not in forbidden:
+                        visited.add((nx_,ny_))
+                        q.append((nx_,ny_))
     return visited
 
-
 def forbidden_mountain_lake_river(grid):
-    forb = set()
-    ny = len(grid)
-    nx = len(grid[0])
+    forb=set()
+    ny=len(grid)
+    nx=len(grid[0])
     for y in range(ny):
         for x in range(nx):
-            if grid[y][x] in (T_MOUNTAIN, T_LAKE, T_RIVER):
-                forb.add((x, y))
+            if grid[y][x] in (T_MOUNTAIN,T_LAKE,T_RIVER):
+                forb.add((x,y))
     return forb
-
 
 class HOI4FrontInvisibleGame:
     def __init__(self, root):
-        self.root = root
-        self.root.title("HOI4 - kill all or capture capital, custom placement + close-range attacks")
+        self.root=root
+        self.root.title("HOI4 - Everyone moves direct line, capture capital fix")
 
-        self.top_frame = tk.Frame(self.root, bg="#444444")
+        self.top_frame=tk.Frame(self.root, bg="#444444")
         self.top_frame.pack(side="top", fill="x")
 
-        quit_btn = tk.Button(self.top_frame, text="Quitter", command=self.quit_game, fg="white", bg="#AA0000")
+        quit_btn=tk.Button(self.top_frame, text="Quitter", command=self.quit_game, fg="white", bg="#AA0000")
         quit_btn.pack(side="left", padx=5, pady=2)
 
-        self.info_label = tk.Label(self.top_frame, text="HOI4 splitted", fg="white", bg="#444444", font=("Arial",12,"bold"))
+        self.info_label=tk.Label(self.top_frame, text="HOI4 direct-line", fg="white", bg="#444444", font=("Arial",12,"bold"))
         self.info_label.pack(side="left", padx=5)
 
-        self.canvas = tk.Canvas(self.root, width=WIDTH, height=HEIGHT, bg="white")
+        self.canvas=tk.Canvas(self.root, width=WIDTH, height=HEIGHT, bg="white")
         self.canvas.pack(side="top", fill="both", expand=True)
 
         self.canvas.focus_set()
         self.canvas.bind("<Escape>", lambda e: self.quit_game())
 
-        self.shift_held = False
+        self.shift_held=False
         self.canvas.bind("<KeyPress-Shift_L>", lambda e: self.set_shift(True))
         self.canvas.bind("<KeyRelease-Shift_L>", lambda e: self.set_shift(False))
 
-        self.grid = generate_map(NX, NY)
+        self.grid=generate_map(NX,NY)
 
-        self.blue_cap = (3, NY // 2)
-        self.red_cap  = (NX - 4, NY // 2)
-        self.grid[self.blue_cap[1]][self.blue_cap[0]] = T_PLAIN
-        self.grid[self.red_cap[1]][self.red_cap[0]]   = T_PLAIN
+        self.blue_cap=(3, NY//2)
+        self.red_cap=(NX-4, NY//2)
+        self.grid[self.blue_cap[1]][self.blue_cap[0]]=T_PLAIN
+        self.grid[self.red_cap[1]][self.red_cap[0]]=T_PLAIN
 
-        self.blue_units = []
-        self.red_units  = []
+        self.blue_units=[]
+        self.red_units=[]
         self.create_initial_units("blue", 10)
         self.create_initial_units("red", 10)
 
-        self.all_units = self.blue_units + self.red_units
-        self.ai_red = AI("red")
+        self.all_units=self.blue_units+self.red_units
+        self.ai_red=AI("red")
 
-        self.running = True
-        self.frame_count = 0
-        self.selected_units = []
-        self.dragging = False
-        self.drag_start = (0, 0)
-        self.drag_end = (0, 0)
-        self.victory_label = None
+        self.running=True
+        self.frame_count=0
+        self.selected_units=[]
+        self.dragging=False
+        self.drag_start=(0,0)
+        self.drag_end=(0,0)
+        self.victory_label=None
 
-        self.start_time = time.time()
-        self.game_started = False
-        self.play_start_time = 0
+        self.start_time=time.time()
+        self.game_started=False
+        self.play_start_time=0
 
-        self.front_points = generate_initial_front(num_points=25)
+        self.front_points=generate_initial_front(num_points=25)
 
-        self.cap_red_timer  = 0.0
-        self.cap_blue_timer = 0.0
+        self.cap_red_timer=0.0
+        self.cap_blue_timer=0.0
 
-        self.placement_phase = True
-
-        self.blue_zone = compute_team_zone(self.grid, self.blue_cap, forbidden_mountain_lake_river(self.grid))
-        self.red_zone  = compute_team_zone(self.grid, self.red_cap,  forbidden_mountain_lake_river(self.grid))
+        # Phase initial
+        self.placement_phase=True
+        self.blue_zone=compute_team_zone(self.grid, self.blue_cap, forbidden_mountain_lake_river(self.grid))
+        self.red_zone = compute_team_zone(self.grid, self.red_cap,  forbidden_mountain_lake_river(self.grid))
 
         self.ai_place_red_units()
 
@@ -120,19 +118,69 @@ class HOI4FrontInvisibleGame:
 
         self.game_loop()
 
+    def update_capital_capture(self, unit):
+        import math
+        if unit.team=="blue":
+            rx,ry=self.red_cap
+            rpx=rx*TILE_SIZE+TILE_SIZE/2
+            rpy=ry*TILE_SIZE+TILE_SIZE/2
+            d=math.hypot(unit.x-rpx, unit.y-rpy)
+            if d<UNIT_RADIUS+5:
+                if not self.is_enemy_on_capital("red"):
+                    unit.cap_capture_time+=1.0/FPS
+                    if unit.cap_capture_time>self.cap_red_timer:
+                        self.cap_red_timer=unit.cap_capture_time
+                else:
+                    unit.cap_capture_time=0
+            else:
+                unit.cap_capture_time=0
+        else:
+            bx,by=self.blue_cap
+            bpx=bx*TILE_SIZE+TILE_SIZE/2
+            bpy=by*TILE_SIZE+TILE_SIZE/2
+            d=math.hypot(unit.x-bpx, unit.y-bpy)
+            if d<UNIT_RADIUS+5:
+                if not self.is_enemy_on_capital("blue"):
+                    unit.cap_capture_time+=1.0/FPS
+                    if unit.cap_capture_time>self.cap_blue_timer:
+                        self.cap_blue_timer=unit.cap_capture_time
+                else:
+                    unit.cap_capture_time=0
+            else:
+                unit.cap_capture_time=0
+
+    def is_enemy_on_capital(self, cap_team):
+        import math
+        if cap_team=="red":
+            rx,ry=self.red_cap
+            rpx=rx*TILE_SIZE+TILE_SIZE/2
+            rpy=ry*TILE_SIZE+TILE_SIZE/2
+            for u in self.red_units:
+                if math.hypot(u.x-rpx, u.y-rpy)<UNIT_RADIUS+5:
+                    return True
+            return False
+        else:
+            bx,by=self.blue_cap
+            bpx=bx*TILE_SIZE+TILE_SIZE/2
+            bpy=by*TILE_SIZE+TILE_SIZE/2
+            for u in self.blue_units:
+                if math.hypot(u.x-bpx, u.y-bpy)<UNIT_RADIUS+5:
+                    return True
+            return False
+
     def is_unit_in_enemy_zone(self, unit):
-        side = check_side(self.front_points, unit.x, unit.y)
+        side=check_side(self.front_points, unit.x, unit.y)
         if unit.team=="blue":
             return (side=="left")
         else:
             return (side=="right")
 
     def create_initial_units(self, team, number):
-        cx, cy = (self.blue_cap if team=="blue" else self.red_cap)
+        cx,cy = (self.blue_cap if team=="blue" else self.red_cap)
         for _ in range(number):
-            px = cx*TILE_SIZE + TILE_SIZE/2
-            py = cy*TILE_SIZE + TILE_SIZE/2
-            u  = Unit(px,py,team)
+            px=cx*TILE_SIZE+TILE_SIZE/2
+            py=cy*TILE_SIZE+TILE_SIZE/2
+            u=Unit(px,py,team)
             if team=="blue":
                 self.blue_units.append(u)
             else:
@@ -148,10 +196,10 @@ class HOI4FrontInvisibleGame:
     def ai_place_red_units(self):
         if not self.red_zone or not self.red_units:
             return
-        bx = sum([u.x for u in self.blue_units])/len(self.blue_units)
+        bx=sum([u.x for u in self.blue_units])/len(self.blue_units)
         tile_bx=int(bx//TILE_SIZE)
         zone_list=list(self.red_zone)
-        if tile_bx< NX//2:
+        if tile_bx<NX//2:
             zone_list.sort(key=lambda p: p[0], reverse=True)
         else:
             zone_list.sort(key=lambda p: p[0])
@@ -160,8 +208,8 @@ class HOI4FrontInvisibleGame:
             if i<len(zone_list):
                 tx,ty=zone_list[i]
                 i+=1
-                u.x=tx*TILE_SIZE + TILE_SIZE/2
-                u.y=ty*TILE_SIZE + TILE_SIZE/2
+                u.x=tx*TILE_SIZE+TILE_SIZE/2
+                u.y=ty*TILE_SIZE+TILE_SIZE/2
 
     def game_loop(self):
         if not self.running:
@@ -200,13 +248,12 @@ class HOI4FrontInvisibleGame:
                     self.selected_units.remove(du)
 
         self.check_victory()
-
         self.draw()
         if self.running:
             self.root.after(int(1000/FPS), self.game_loop)
 
     def resolve_combat(self):
-        ATTACK_RANGE=40   # <-- Seules les troupes distantes de moins de 40px "s'entretuent"
+        ATTACK_RANGE=40
         for u in self.all_units:
             enemy_count=0
             ally_count=0
@@ -284,7 +331,7 @@ class HOI4FrontInvisibleGame:
         if self.dragging:
             sx,sy=self.drag_start
             ex,ey=self.drag_end
-            self.canvas.create_rectangle(sx,sy,ex,ey,outline="yellow",width=2,dash=(4,4))
+            self.canvas.create_rectangle(sx,sy,ex,ey, outline="yellow", width=2, dash=(4,4))
 
     def draw_unit(self,u):
         color=(COLOR_BLUE if u.team=="blue" else COLOR_RED)
@@ -309,12 +356,6 @@ class HOI4FrontInvisibleGame:
         self.canvas.create_rectangle(leftx,topy, leftx+bar_w, topy+bar_h, fill="#444444")
         self.canvas.create_rectangle(leftx,topy, leftx+bar_w*ratio, topy+bar_h, fill="green")
 
-        if u.team=="blue" and u.dest_tile:
-            tx,ty=u.dest_tile
-            px=tx*TILE_SIZE+TILE_SIZE/2
-            py=ty*TILE_SIZE+TILE_SIZE/2
-            self.draw_arrow(u.x,u.y, px,py)
-
     def draw_star(self,cx,cy,size,color):
         import math
         pts=[]
@@ -331,18 +372,6 @@ class HOI4FrontInvisibleGame:
             fl.append(py)
         self.canvas.create_rectangle(cx-size-5, cy-size-5, cx+size+5, cy+size+5, outline="black", width=2)
         self.canvas.create_polygon(fl, fill=color, outline=color)
-
-    def draw_arrow(self,x0,y0,x1,y1):
-        self.canvas.create_line(x0,y0,x1,y1, fill="black", width=2, smooth=True)
-        import math
-        angle=math.atan2(y1-y0,x1-x0)
-        arr_len=10
-        arr_angle=math.radians(20)
-        xA=x1-arr_len*math.cos(angle-arr_angle)
-        yA=y1-arr_len*math.sin(angle-arr_angle)
-        xB=x1-arr_len*math.cos(angle+arr_angle)
-        yB=y1-arr_len*math.sin(angle+arr_angle)
-        self.canvas.create_polygon([(x1,y1),(xA,yA),(xB,yB)], fill="black")
 
     def on_left_press(self,event):
         self.dragging=True
@@ -378,17 +407,20 @@ class HOI4FrontInvisibleGame:
         import math
         clicked_unit=None
         for u in self.all_units:
-            if math.hypot(u.x-mx, u.y-my)<=UNIT_RADIUS+2:
+            d=math.hypot(u.x-mx, u.y-my)
+            if d<=UNIT_RADIUS+2:
                 clicked_unit=u
                 break
         if clicked_unit:
+            # cliquer sur un ennemi => attaquer
             if clicked_unit.team!="blue":
                 if self.selected_units:
                     for su in self.selected_units:
                         su.target_enemy=clicked_unit
-                        su.path=[]
-                        su.dest_tile=None
+                        su.dest_px=None
+                        su.dest_py=None
             else:
+                # cliquer sur un allié => select
                 if not self.shift_held:
                     self.clear_selection()
                 clicked_unit.is_selected=True
@@ -403,13 +435,13 @@ class HOI4FrontInvisibleGame:
                         su.x=tx*TILE_SIZE+TILE_SIZE/2
                         su.y=ty*TILE_SIZE+TILE_SIZE/2
             else:
-                if self.selected_units:
-                    from Engineering.pathfinding import find_path_bfs
-                    for su in self.selected_units:
-                        su.target_enemy=None
-                        sx,sy=su.get_tile_pos()
-                        su.path=find_path_bfs(self.grid,(sx,sy),(tx,ty))
-                        su.dest_tile=(tx,ty)
+                # On se déplace en ligne droite => on stock la dest en px
+                px=tx*TILE_SIZE+TILE_SIZE/2
+                py=ty*TILE_SIZE+TILE_SIZE/2
+                for su in self.selected_units:
+                    su.target_enemy=None
+                    su.dest_px=px
+                    su.dest_py=py
 
     def on_right_click(self,event):
         self.clear_selection()
@@ -432,7 +464,6 @@ class HOI4FrontInvisibleGame:
     def stop_game(self):
         self.running=False
         self.root.quit()
-
 
 def main():
     root=tk.Tk()
