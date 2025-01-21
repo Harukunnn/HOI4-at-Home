@@ -6,7 +6,7 @@ import random
 
 from Engineering.consts import (
     WIDTH, HEIGHT, TILE_SIZE, NX, NY,
-    FPS, INITIAL_DELAY, CAPTURE_TIME,
+    FPS, CAPTURE_TIME,
     T_PLAIN, UNIT_RADIUS, STAR_SIZE,
     COLOR_BLUE, COLOR_RED, COLOR_HIGHLIGHT,
     ENCIRCLED_TICK_LIMIT, T_MOUNTAIN, T_LAKE, T_RIVER
@@ -16,6 +16,9 @@ from Engineering.pathfinding import in_bounds
 from Engineering.front import generate_initial_front, add_front_points_on_cross, check_side
 from Engineering.units import Unit, AI, distance
 from collections import deque
+
+INITIAL_DELAY = 30.0
+CAPTURE_RADIUS = 50.0
 
 def compute_team_zone(grid, cap, forbidden):
     (cx, cy)=cap
@@ -47,12 +50,10 @@ def forbidden_mountain_lake_river(grid):
                 forb.add((x,y))
     return forb
 
-#############################
-
 class HOI4FrontInvisibleGame:
     def __init__(self, root):
         self.root=root
-        self.root.title("HOI4 - direct line for all, 30s placement, no time limit")
+        self.root.title("HOI4 - Direct line all, 30s placement, capture radius=50")
 
         self.top_frame=tk.Frame(self.root, bg="#444444")
         self.top_frame.pack(side="top", fill="x")
@@ -82,8 +83,8 @@ class HOI4FrontInvisibleGame:
 
         self.blue_units=[]
         self.red_units=[]
-        self.create_initial_units("blue", 10)
-        self.create_initial_units("red", 10)
+        self.create_initial_units("blue",10)
+        self.create_initial_units("red",10)
 
         self.all_units=self.blue_units+self.red_units
         self.ai_red=AI("red")
@@ -105,31 +106,28 @@ class HOI4FrontInvisibleGame:
         self.cap_red_timer=0.0
         self.cap_blue_timer=0.0
 
-        # On rallonge le placement à 30s
         self.placement_phase=True
-        self.INITIAL_DELAY=30.0  # plutot que de lire de const ?
 
-        # BFS zone
         self.blue_zone=compute_team_zone(self.grid, self.blue_cap, forbidden_mountain_lake_river(self.grid))
         self.red_zone =compute_team_zone(self.grid, self.red_cap,  forbidden_mountain_lake_river(self.grid))
 
         self.ai_place_red_units()
 
-        self.canvas.bind("<Button-1>", self.on_left_press)
-        self.canvas.bind("<B1-Motion>", self.on_left_drag)
-        self.canvas.bind("<ButtonRelease-1>", self.on_left_release)
-        self.canvas.bind("<Button-3>", self.on_right_click)
+        self.canvas.bind("<Button-1>",self.on_left_press)
+        self.canvas.bind("<B1-Motion>",self.on_left_drag)
+        self.canvas.bind("<ButtonRelease-1>",self.on_left_release)
+        self.canvas.bind("<Button-3>",self.on_right_click)
 
         self.game_loop()
 
     def update_capital_capture(self, unit):
-        import math
+        # Rester < 50 px => CAPTURE_RADIUS
         if unit.team=="blue":
             rx,ry=self.red_cap
-            rpx=rx*TILE_SIZE+TILE_SIZE/2
-            rpy=ry*TILE_SIZE+TILE_SIZE/2
-            d=math.hypot(unit.x-rpx, unit.y-rpy)
-            if d<UNIT_RADIUS+5:
+            cx=rx*TILE_SIZE+TILE_SIZE/2
+            cy=ry*TILE_SIZE+TILE_SIZE/2
+            d=distance(unit.x,unit.y, cx,cy)
+            if d<CAPTURE_RADIUS:
                 if not self.is_enemy_on_capital("red"):
                     unit.cap_capture_time+=1.0/FPS
                     if unit.cap_capture_time>self.cap_red_timer:
@@ -140,10 +138,10 @@ class HOI4FrontInvisibleGame:
                 unit.cap_capture_time=0
         else:
             bx,by=self.blue_cap
-            bpx=bx*TILE_SIZE+TILE_SIZE/2
-            bpy=by*TILE_SIZE+TILE_SIZE/2
-            d=math.hypot(unit.x-bpx, unit.y-bpy)
-            if d<UNIT_RADIUS+5:
+            cx=bx*TILE_SIZE+TILE_SIZE/2
+            cy=by*TILE_SIZE+TILE_SIZE/2
+            d=distance(unit.x,unit.y, cx,cy)
+            if d<CAPTURE_RADIUS:
                 if not self.is_enemy_on_capital("blue"):
                     unit.cap_capture_time+=1.0/FPS
                     if unit.cap_capture_time>self.cap_blue_timer:
@@ -154,26 +152,28 @@ class HOI4FrontInvisibleGame:
                 unit.cap_capture_time=0
 
     def is_enemy_on_capital(self, cap_team):
-        import math
+        # On verifie la presence d'un defenseur a < 50 px
         if cap_team=="red":
             rx,ry=self.red_cap
-            rpx=rx*TILE_SIZE+TILE_SIZE/2
-            rpy=ry*TILE_SIZE+TILE_SIZE/2
+            cx=rx*TILE_SIZE+TILE_SIZE/2
+            cy=ry*TILE_SIZE+TILE_SIZE/2
             for u in self.red_units:
-                if math.hypot(u.x-rpx,u.y-rpy)<UNIT_RADIUS+5:
+                d=distance(u.x,u.y, cx,cy)
+                if d<CAPTURE_RADIUS:
                     return True
             return False
         else:
             bx,by=self.blue_cap
-            bpx=bx*TILE_SIZE+TILE_SIZE/2
-            bpy=by*TILE_SIZE+TILE_SIZE/2
+            cx=bx*TILE_SIZE+TILE_SIZE/2
+            cy=by*TILE_SIZE+TILE_SIZE/2
             for u in self.blue_units:
-                if math.hypot(u.x-bpx,u.y-bpy)<UNIT_RADIUS+5:
+                d=distance(u.x,u.y, cx,cy)
+                if d<CAPTURE_RADIUS:
                     return True
             return False
 
     def is_unit_in_enemy_zone(self, unit):
-        side=check_side(self.front_points, unit.x, unit.y)
+        side=check_side(self.front_points, unit.x,unit.y)
         if unit.team=="blue":
             return (side=="left")
         else:
@@ -218,18 +218,16 @@ class HOI4FrontInvisibleGame:
     def game_loop(self):
         if not self.running:
             return
-        self.frame_count+=1
+
         now=time.time()
         dt=now-self.start_time
-        # Phase placement => 30s
-        if dt>=self.INITIAL_DELAY and self.placement_phase:
+        if dt>=INITIAL_DELAY and self.placement_phase:
             self.placement_phase=False
             self.game_started=True
             self.play_start_time=time.time()
 
         movement_allowed=(not self.placement_phase)
 
-        # IA
         if self.game_started:
             self.ai_red.update(self, movement_allowed)
 
@@ -237,7 +235,6 @@ class HOI4FrontInvisibleGame:
         for u in self.all_units:
             u.update(self, self.all_units, self.grid, movement_allowed)
 
-        # destructions
         dead=[]
         for u in self.all_units:
             if u.encircled_ticks>ENCIRCLED_TICK_LIMIT:
@@ -289,6 +286,8 @@ class HOI4FrontInvisibleGame:
                     (x+1)*TILE_SIZE, (y+1)*TILE_SIZE,
                     fill=c, outline=""
                 )
+
+        # capitals
         rpx=self.red_cap[0]*TILE_SIZE+TILE_SIZE/2
         rpy=self.red_cap[1]*TILE_SIZE+TILE_SIZE/2
         bpx=self.blue_cap[0]*TILE_SIZE+TILE_SIZE/2
@@ -296,7 +295,6 @@ class HOI4FrontInvisibleGame:
         self.draw_star(rpx,rpy,STAR_SIZE,COLOR_RED)
         self.draw_star(bpx,bpy,STAR_SIZE,COLOR_BLUE)
 
-        # front line
         if len(self.front_points)>1:
             coords=[]
             for p in self.front_points:
@@ -304,19 +302,16 @@ class HOI4FrontInvisibleGame:
                 coords.append(p[1])
             self.canvas.create_line(coords, fill="black", width=6, smooth=True)
 
-        # units
         for u in self.all_units:
             self.draw_unit(u)
 
-        # UI
         self.canvas.create_rectangle(0,0,190,80, fill="#222222", outline="#666666", width=2)
         if self.placement_phase:
-            left=self.INITIAL_DELAY-(time.time()-self.start_time)
+            left=INITIAL_DELAY-(time.time()-self.start_time)
             if left<0:left=0
             txt=f"Placement : {int(left)}s"
             self.canvas.create_text(10,10,text=txt,anchor="nw",fill="white",font=("Arial",14,"bold"))
         else:
-            # Pas de limite de temps => on affiche juste la durée
             e=time.time()-self.play_start_time
             txt=f"Time : {int(e)}s"
             self.canvas.create_text(10,10,text=txt,anchor="nw",fill="white",font=("Arial",14,"bold"))
@@ -347,15 +342,15 @@ class HOI4FrontInvisibleGame:
     def draw_unit(self,u):
         color=(COLOR_BLUE if u.team=="blue" else COLOR_RED)
         self.canvas.create_oval(
-            u.x-UNIT_RADIUS, u.y-UNIT_RADIUS,
-            u.x+UNIT_RADIUS, u.y+UNIT_RADIUS,
+            u.x-UNIT_RADIUS,u.y-UNIT_RADIUS,
+            u.x+UNIT_RADIUS,u.y+UNIT_RADIUS,
             fill=color, outline=""
         )
         if u.is_selected:
             self.canvas.create_oval(
-                u.x-(UNIT_RADIUS+2), u.y-(UNIT_RADIUS+2),
-                u.x+(UNIT_RADIUS+2), u.y+(UNIT_RADIUS+2),
-                outline=COLOR_HIGHLIGHT, width=2
+                u.x-(UNIT_RADIUS+2),u.y-(UNIT_RADIUS+2),
+                u.x+(UNIT_RADIUS+2),u.y+(UNIT_RADIUS+2),
+                outline=COLOR_HIGHLIGHT,width=2
             )
         # HP
         bar_w=30
@@ -381,7 +376,7 @@ class HOI4FrontInvisibleGame:
         for (px,py) in pts:
             fl.append(px)
             fl.append(py)
-        self.canvas.create_rectangle(cx-size-5, cy-size-5, cx+size+5, cy+size+5, outline="black",width=2)
+        self.canvas.create_rectangle(cx-size-5, cy-size-5, cx+size+5, cy+size+5, outline="black", width=2)
         self.canvas.create_polygon(fl, fill=color, outline=color)
 
     def on_left_press(self,event):
@@ -446,7 +441,6 @@ class HOI4FrontInvisibleGame:
                         su.x=tx*TILE_SIZE+TILE_SIZE/2
                         su.y=ty*TILE_SIZE+TILE_SIZE/2
             else:
-                # deplacement direct
                 px=tx*TILE_SIZE+TILE_SIZE/2
                 py=ty*TILE_SIZE+TILE_SIZE/2
                 for su in self.selected_units:
