@@ -81,7 +81,7 @@ Contributions are welcome! To get started:
 4. Commit and push your changes.
 5. Open a pull request against the main branch of this repository.
 
-Please read our [CONTRIBUTING.md](https://github.com/Harukunnn/HOI4-at-Home/blob/86bb808a642f80c033ba0f9a8e5ac0e83dc43430/CONTRIBUTING.md) for detailed guidelines.
+Please read our [CONTRIBUTING.md](https://github.com/Harukunnn/HOI4-at-Home/blob/4c844a302ae5b44e55e45ab28e1029b98d05801c/CONTRIBUTING.md) for detailed guidelines.
 
 ## License
 
