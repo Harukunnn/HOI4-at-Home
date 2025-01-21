@@ -115,6 +115,8 @@ Contributions are welcome! To get started:
 
 Please read our [CONTRIBUTING.md](https://github.com/Harukunnn/HOI4-at-Home/blob/4c844a302ae5b44e55e45ab28e1029b98d05801c/CONTRIBUTING.md) for detailed guidelines.
 
+Please read our [CODE_OF_CONDUCT.md](https://github.com/Harukunnn/HOI4-at-Home/blob/bbf32330be3967aa8fe400a1e6ee89c688f3e587/CODE_OF_CONDUCT.md) for detailed guidelines for your conduct.
+
 ---
 
 ## License
