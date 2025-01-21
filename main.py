@@ -14,7 +14,6 @@ from Engineering.consts import (
 from Engineering.generation import generate_map
 from Engineering.pathfinding import in_bounds
 from Engineering.front import generate_initial_front, add_front_points_on_cross, check_side
-# => on n'importe plus BFS si on n'en a plus besoin
 from Engineering.units import Unit, AI, distance
 from collections import deque
 
@@ -31,7 +30,7 @@ def compute_team_zone(grid, cap, forbidden):
         for (dx,dy) in [(1,0),(-1,0),(0,1),(0,-1)]:
             nx_=x+dx
             ny_=y+dy
-            if in_bounds(nx_, ny_):
+            if in_bounds(nx_,ny_):
                 if (nx_,ny_) not in visited:
                     if (nx_,ny_) not in forbidden:
                         visited.add((nx_,ny_))
@@ -48,10 +47,12 @@ def forbidden_mountain_lake_river(grid):
                 forb.add((x,y))
     return forb
 
+#############################
+
 class HOI4FrontInvisibleGame:
     def __init__(self, root):
         self.root=root
-        self.root.title("HOI4 - Everyone moves direct line, capture capital fix")
+        self.root.title("HOI4 - direct line for all, 30s placement, no time limit")
 
         self.top_frame=tk.Frame(self.root, bg="#444444")
         self.top_frame.pack(side="top", fill="x")
@@ -104,10 +105,13 @@ class HOI4FrontInvisibleGame:
         self.cap_red_timer=0.0
         self.cap_blue_timer=0.0
 
-        # Phase initial
+        # On rallonge le placement à 30s
         self.placement_phase=True
+        self.INITIAL_DELAY=30.0  # plutot que de lire de const ?
+
+        # BFS zone
         self.blue_zone=compute_team_zone(self.grid, self.blue_cap, forbidden_mountain_lake_river(self.grid))
-        self.red_zone = compute_team_zone(self.grid, self.red_cap,  forbidden_mountain_lake_river(self.grid))
+        self.red_zone =compute_team_zone(self.grid, self.red_cap,  forbidden_mountain_lake_river(self.grid))
 
         self.ai_place_red_units()
 
@@ -156,7 +160,7 @@ class HOI4FrontInvisibleGame:
             rpx=rx*TILE_SIZE+TILE_SIZE/2
             rpy=ry*TILE_SIZE+TILE_SIZE/2
             for u in self.red_units:
-                if math.hypot(u.x-rpx, u.y-rpy)<UNIT_RADIUS+5:
+                if math.hypot(u.x-rpx,u.y-rpy)<UNIT_RADIUS+5:
                     return True
             return False
         else:
@@ -164,7 +168,7 @@ class HOI4FrontInvisibleGame:
             bpx=bx*TILE_SIZE+TILE_SIZE/2
             bpy=by*TILE_SIZE+TILE_SIZE/2
             for u in self.blue_units:
-                if math.hypot(u.x-bpx, u.y-bpy)<UNIT_RADIUS+5:
+                if math.hypot(u.x-bpx,u.y-bpy)<UNIT_RADIUS+5:
                     return True
             return False
 
@@ -176,7 +180,7 @@ class HOI4FrontInvisibleGame:
             return (side=="right")
 
     def create_initial_units(self, team, number):
-        cx,cy = (self.blue_cap if team=="blue" else self.red_cap)
+        cx,cy=(self.blue_cap if team=="blue" else self.red_cap)
         for _ in range(number):
             px=cx*TILE_SIZE+TILE_SIZE/2
             py=cy*TILE_SIZE+TILE_SIZE/2
@@ -196,7 +200,7 @@ class HOI4FrontInvisibleGame:
     def ai_place_red_units(self):
         if not self.red_zone or not self.red_units:
             return
-        bx=sum([u.x for u in self.blue_units])/len(self.blue_units)
+        bx=sum(u.x for u in self.blue_units)/len(self.blue_units)
         tile_bx=int(bx//TILE_SIZE)
         zone_list=list(self.red_zone)
         if tile_bx<NX//2:
@@ -217,13 +221,15 @@ class HOI4FrontInvisibleGame:
         self.frame_count+=1
         now=time.time()
         dt=now-self.start_time
-        if dt>=INITIAL_DELAY and self.placement_phase:
+        # Phase placement => 30s
+        if dt>=self.INITIAL_DELAY and self.placement_phase:
             self.placement_phase=False
             self.game_started=True
             self.play_start_time=time.time()
 
         movement_allowed=(not self.placement_phase)
 
+        # IA
         if self.game_started:
             self.ai_red.update(self, movement_allowed)
 
@@ -231,6 +237,7 @@ class HOI4FrontInvisibleGame:
         for u in self.all_units:
             u.update(self, self.all_units, self.grid, movement_allowed)
 
+        # destructions
         dead=[]
         for u in self.all_units:
             if u.encircled_ticks>ENCIRCLED_TICK_LIMIT:
@@ -278,8 +285,8 @@ class HOI4FrontInvisibleGame:
             for x in range(NX):
                 c=tile_color(self.grid[y][x])
                 self.canvas.create_rectangle(
-                    x*TILE_SIZE,y*TILE_SIZE,
-                    (x+1)*TILE_SIZE,(y+1)*TILE_SIZE,
+                    x*TILE_SIZE, y*TILE_SIZE,
+                    (x+1)*TILE_SIZE, (y+1)*TILE_SIZE,
                     fill=c, outline=""
                 )
         rpx=self.red_cap[0]*TILE_SIZE+TILE_SIZE/2
@@ -289,6 +296,7 @@ class HOI4FrontInvisibleGame:
         self.draw_star(rpx,rpy,STAR_SIZE,COLOR_RED)
         self.draw_star(bpx,bpy,STAR_SIZE,COLOR_BLUE)
 
+        # front line
         if len(self.front_points)>1:
             coords=[]
             for p in self.front_points:
@@ -296,16 +304,19 @@ class HOI4FrontInvisibleGame:
                 coords.append(p[1])
             self.canvas.create_line(coords, fill="black", width=6, smooth=True)
 
+        # units
         for u in self.all_units:
             self.draw_unit(u)
 
+        # UI
         self.canvas.create_rectangle(0,0,190,80, fill="#222222", outline="#666666", width=2)
         if self.placement_phase:
-            left=INITIAL_DELAY-(time.time()-self.start_time)
+            left=self.INITIAL_DELAY-(time.time()-self.start_time)
             if left<0:left=0
             txt=f"Placement : {int(left)}s"
             self.canvas.create_text(10,10,text=txt,anchor="nw",fill="white",font=("Arial",14,"bold"))
         else:
+            # Pas de limite de temps => on affiche juste la durée
             e=time.time()-self.play_start_time
             txt=f"Time : {int(e)}s"
             self.canvas.create_text(10,10,text=txt,anchor="nw",fill="white",font=("Arial",14,"bold"))
@@ -336,15 +347,15 @@ class HOI4FrontInvisibleGame:
     def draw_unit(self,u):
         color=(COLOR_BLUE if u.team=="blue" else COLOR_RED)
         self.canvas.create_oval(
-            u.x-UNIT_RADIUS,u.y-UNIT_RADIUS,
-            u.x+UNIT_RADIUS,u.y+UNIT_RADIUS,
+            u.x-UNIT_RADIUS, u.y-UNIT_RADIUS,
+            u.x+UNIT_RADIUS, u.y+UNIT_RADIUS,
             fill=color, outline=""
         )
         if u.is_selected:
             self.canvas.create_oval(
-                u.x-(UNIT_RADIUS+2),u.y-(UNIT_RADIUS+2),
-                u.x+(UNIT_RADIUS+2),u.y+(UNIT_RADIUS+2),
-                outline=COLOR_HIGHLIGHT,width=2
+                u.x-(UNIT_RADIUS+2), u.y-(UNIT_RADIUS+2),
+                u.x+(UNIT_RADIUS+2), u.y+(UNIT_RADIUS+2),
+                outline=COLOR_HIGHLIGHT, width=2
             )
         # HP
         bar_w=30
@@ -370,7 +381,7 @@ class HOI4FrontInvisibleGame:
         for (px,py) in pts:
             fl.append(px)
             fl.append(py)
-        self.canvas.create_rectangle(cx-size-5, cy-size-5, cx+size+5, cy+size+5, outline="black", width=2)
+        self.canvas.create_rectangle(cx-size-5, cy-size-5, cx+size+5, cy+size+5, outline="black",width=2)
         self.canvas.create_polygon(fl, fill=color, outline=color)
 
     def on_left_press(self,event):
@@ -412,7 +423,7 @@ class HOI4FrontInvisibleGame:
                 clicked_unit=u
                 break
         if clicked_unit:
-            # cliquer sur un ennemi => attaquer
+            # ennemi => on l'attaque
             if clicked_unit.team!="blue":
                 if self.selected_units:
                     for su in self.selected_units:
@@ -420,7 +431,7 @@ class HOI4FrontInvisibleGame:
                         su.dest_px=None
                         su.dest_py=None
             else:
-                # cliquer sur un allié => select
+                # allie => select
                 if not self.shift_held:
                     self.clear_selection()
                 clicked_unit.is_selected=True
@@ -435,7 +446,7 @@ class HOI4FrontInvisibleGame:
                         su.x=tx*TILE_SIZE+TILE_SIZE/2
                         su.y=ty*TILE_SIZE+TILE_SIZE/2
             else:
-                # On se déplace en ligne droite => on stock la dest en px
+                # deplacement direct
                 px=tx*TILE_SIZE+TILE_SIZE/2
                 py=ty*TILE_SIZE+TILE_SIZE/2
                 for su in self.selected_units:
