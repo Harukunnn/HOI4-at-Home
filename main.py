@@ -9,7 +9,7 @@ from Engineering.consts import (
     FPS, INITIAL_DELAY, CAPTURE_TIME,
     T_PLAIN, UNIT_RADIUS, STAR_SIZE,
     COLOR_BLUE, COLOR_RED, COLOR_HIGHLIGHT,
-    tile_color  # <-- IMPORT DE LA FONCTION tile_color
+    ENCIRCLED_TICK_LIMIT
 )
 from Engineering.generation import generate_map
 from Engineering.pathfinding import in_bounds
@@ -19,7 +19,7 @@ from Engineering.units import Unit, AI
 class HOI4FrontInvisibleGame:
     def __init__(self, root):
         self.root = root
-        self.root.title("HOI4 splitted + water slow + fix tile_color import")
+        self.root.title("HOI4 splitted + Victory Animation")
 
         self.top_frame = tk.Frame(self.root, bg="#444444")
         self.top_frame.pack(side="top", fill="x")
@@ -36,44 +36,56 @@ class HOI4FrontInvisibleGame:
         self.canvas.focus_set()
         self.canvas.bind("<Escape>", lambda e: self.quit_game())
 
-        self.shift_held=False
+        self.shift_held = False
         self.canvas.bind("<KeyPress-Shift_L>", lambda e: self.set_shift(True))
         self.canvas.bind("<KeyRelease-Shift_L>", lambda e: self.set_shift(False))
 
+        # Génération de la carte
         self.grid = generate_map(NX, NY)
 
-        self.blue_cap=(3, NY//2)
-        self.red_cap=(NX-4, NY//2)
-        self.grid[self.blue_cap[1]][self.blue_cap[0]]=T_PLAIN
-        self.grid[self.red_cap[1]][self.red_cap[0]]=T_PLAIN
+        # Capitales
+        self.blue_cap = (3, NY//2)
+        self.red_cap  = (NX-4, NY//2)
+        self.grid[self.blue_cap[1]][self.blue_cap[0]] = T_PLAIN
+        self.grid[self.red_cap[1]][self.red_cap[0]]   = T_PLAIN
 
-        self.blue_units=self.create_units_around_cap(self.blue_cap,"blue")
-        self.red_units =self.create_units_around_cap(self.red_cap,"red")
-        self.all_units =self.blue_units+self.red_units
+        # Création d’unités
+        self.blue_units = self.create_units_around_cap(self.blue_cap, "blue")
+        self.red_units  = self.create_units_around_cap(self.red_cap, "red")
+        self.all_units  = self.blue_units + self.red_units
 
         self.ai_red = AI("red")
 
-        self.running=True
-        self.frame_count=0
-        self.selected_units=[]
-        self.dragging=False
-        self.drag_start=(0,0)
-        self.drag_end=(0,0)
-        self.victory_label=None
+        # État du jeu
+        self.running = True
+        self.frame_count = 0
+        self.selected_units = []
+        self.dragging = False
+        self.drag_start = (0,0)
+        self.drag_end   = (0,0)
 
-        self.start_time=time.time()
-        self.game_started=False
-        self.play_start_time=0
+        # Chrono
+        self.start_time = time.time()
+        self.game_started = False
+        self.play_start_time = 0
 
-        self.front_points=generate_initial_front(num_points=25)
+        # Ligne de front
+        self.front_points = generate_initial_front(num_points=25)
 
-        self.cap_red_timer=0.0
-        self.cap_blue_timer=0.0
+        # Timer capture capital
+        self.cap_red_timer  = 0.0
+        self.cap_blue_timer = 0.0
 
-        self.canvas.bind("<Button-1>",self.on_left_press)
-        self.canvas.bind("<B1-Motion>",self.on_left_drag)
-        self.canvas.bind("<ButtonRelease-1>",self.on_left_release)
-        self.canvas.bind("<Button-3>",self.on_right_click)
+        # Label/mécanisme de victoire
+        self.victory_label = None
+        self.victory_mode  = False  # pour savoir si on est en animation de victoire
+        self.victory_phase = 0      # pour animer (clignoter)
+
+        # Binds souris
+        self.canvas.bind("<Button-1>", self.on_left_press)
+        self.canvas.bind("<B1-Motion>", self.on_left_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_left_release)
+        self.canvas.bind("<Button-3>", self.on_right_click)
 
         self.game_loop()
 
@@ -81,24 +93,25 @@ class HOI4FrontInvisibleGame:
         self.shift_held=val
 
     def quit_game(self):
+        # simple close
         self.running=False
         self.root.quit()
 
     def create_units_around_cap(self, cap, team):
-        from Engineering.consts import MIN_TROOPS_PER_TEAM
         units=[]
         placed=0
-        (cx,cy)=cap
+        from Engineering.consts import MIN_TROOPS_PER_TEAM
+        (cx,cy) = cap
         while placed<MIN_TROOPS_PER_TEAM:
-            rx=random.randint(-3,3)
-            ry=random.randint(-3,3)
-            tx=cx+rx
-            ty=cy+ry
+            rx = random.randint(-3,3)
+            ry = random.randint(-3,3)
+            tx = cx+rx
+            ty = cy+ry
             if in_bounds(tx,ty):
-                if self.grid[ty][tx]==T_PLAIN:
-                    px=tx*TILE_SIZE + TILE_SIZE/2
-                    py=ty*TILE_SIZE + TILE_SIZE/2
-                    u=Unit(px,py,team)
+                if self.grid[ty][tx] == T_PLAIN:
+                    px = tx*TILE_SIZE + TILE_SIZE/2
+                    py = ty*TILE_SIZE + TILE_SIZE/2
+                    u  = Unit(px,py,team)
                     units.append(u)
                     placed+=1
         return units
@@ -107,7 +120,7 @@ class HOI4FrontInvisibleGame:
         if not self.running:
             return
 
-        self.frame_count += 1
+        self.frame_count+=1
         now=time.time()
         if not self.game_started:
             if now-self.start_time>=INITIAL_DELAY:
@@ -117,37 +130,39 @@ class HOI4FrontInvisibleGame:
         else:
             movement_allowed=True
 
-        self.ai_red.update(self, movement_allowed)
+        # Si on est en "victoire", on continue juste l'animation
+        if not self.victory_mode:
+            self.ai_red.update(self, movement_allowed)
+            for u in self.all_units:
+                u.update(self, self.all_units, self.grid, movement_allowed)
+                if self.cross_front(u):
+                    self.front_points=add_front_points_on_cross(self.front_points, u.x,u.y)
 
-        for u in self.all_units:
-            u.update(self, self.all_units, self.grid, movement_allowed)
-            if self.cross_front(u):
-                self.front_points=add_front_points_on_cross(self.front_points,u.x,u.y)
+            dead=[]
+            for u in self.all_units:
+                if u.encircled_ticks>ENCIRCLED_TICK_LIMIT:
+                    dead.append(u)
+            for du in dead:
+                self.all_units.remove(du)
+                if du in self.blue_units:
+                    self.blue_units.remove(du)
+                else:
+                    self.red_units.remove(du)
+                if du in self.selected_units:
+                    self.selected_units.remove(du)
 
-        dead=[]
-        from Engineering.consts import ENCIRCLED_TICK_LIMIT
-        for u in self.all_units:
-            if u.encircled_ticks>ENCIRCLED_TICK_LIMIT:
-                dead.append(u)
-        for du in dead:
-            self.all_units.remove(du)
-            if du in self.blue_units:
-                self.blue_units.remove(du)
-            else:
-                self.red_units.remove(du)
-            if du in self.selected_units:
-                self.selected_units.remove(du)
+            self.check_victory()
 
-        self.check_victory()
         self.draw()
-        if self.running:
-            from Engineering.consts import FPS
-            self.root.after(int(1000/FPS), self.game_loop)
+        if self.victory_mode:
+            self.victory_phase=(self.victory_phase+1)%60  # pour clignoter
+        from Engineering.consts import FPS
+        self.root.after(int(1000/FPS), self.game_loop)
 
     def draw(self):
         self.canvas.delete("all")
 
-        from Engineering.consts import NX, NY, TILE_SIZE
+        from Engineering.consts import tile_color, NX, NY, TILE_SIZE
         for y in range(NY):
             for x in range(NX):
                 c=tile_color(self.grid[y][x])
@@ -163,6 +178,8 @@ class HOI4FrontInvisibleGame:
         rpy=ry*TILE_SIZE+TILE_SIZE/2
         bpx=bx*TILE_SIZE+TILE_SIZE/2
         bpy=by*TILE_SIZE+TILE_SIZE/2
+
+        from Engineering.consts import COLOR_RED, COLOR_BLUE
         self.draw_star(rpx,rpy,STAR_SIZE,COLOR_RED)
         self.draw_star(bpx,bpy,STAR_SIZE,COLOR_BLUE)
 
@@ -198,13 +215,26 @@ class HOI4FrontInvisibleGame:
 
         if self.victory_label:
             from Engineering.consts import WIDTH, HEIGHT
+            # petite animation de clignotement
+            alpha=1.0
+            if (self.victory_phase<30):
+                alpha=1.0
+            else:
+                alpha=0.3
+            # on peut changer la couleur ou la taille
+            color = f"#{int(alpha*255):02x}{int(alpha*255):02x}00"
             self.canvas.create_text(
                 WIDTH//2, HEIGHT//2,
                 text=self.victory_label,
-                fill="yellow",
-                font=("Helvetica",24,"bold"),
+                fill=color,
+                font=("Helvetica",28,"bold"),
                 anchor="center"
             )
+
+        if self.dragging:
+            sx,sy=self.drag_start
+            ex,ey=self.drag_end
+            self.canvas.create_rectangle(sx,sy,ex,ey, outline="yellow", width=2, dash=(4,4))
 
     def draw_unit(self, u):
         from Engineering.consts import UNIT_RADIUS, COLOR_RED, COLOR_BLUE, COLOR_HIGHLIGHT, TILE_SIZE
@@ -287,8 +317,8 @@ class HOI4FrontInvisibleGame:
 
     def handle_click(self,mx,my):
         import math
-        clicked_unit=None
         from Engineering.consts import UNIT_RADIUS
+        clicked_unit=None
         for u in self.all_units:
             if math.hypot(u.x-mx, u.y-my)<=UNIT_RADIUS+2:
                 clicked_unit=u
@@ -327,15 +357,13 @@ class HOI4FrontInvisibleGame:
 
     def cross_front(self, unit):
         old_side = getattr(unit,"front_side",None)
-        from Engineering.front import check_side
-        new_side=check_side(self.front_points, unit.x, unit.y)
+        new_side = check_side(self.front_points, unit.x, unit.y)
         unit.front_side=new_side
         if old_side and old_side!=new_side:
             return True
         return False
 
     def is_unit_in_enemy_zone(self, unit):
-        from Engineering.front import check_side
         side=check_side(self.front_points, unit.x, unit.y)
         if unit.team=="blue":
             return (side=="left")
@@ -344,11 +372,11 @@ class HOI4FrontInvisibleGame:
 
     def update_capital_capture(self, unit):
         import math
-        from Engineering.consts import UNIT_RADIUS, FPS, CAPTURE_TIME, T_PLAIN, TILE_SIZE
+        from Engineering.consts import UNIT_RADIUS, FPS, TILE_SIZE
         if unit.team=="blue":
             rx,ry=self.red_cap
-            rpx=rx*TILE_SIZE + TILE_SIZE/2
-            rpy=ry*TILE_SIZE + TILE_SIZE/2
+            rpx=rx*TILE_SIZE+TILE_SIZE/2
+            rpy=ry*TILE_SIZE+TILE_SIZE/2
             d=math.hypot(unit.x-rpx, unit.y-rpy)
             if d<UNIT_RADIUS+5:
                 if not self.is_enemy_on_capital("red"):
@@ -361,8 +389,8 @@ class HOI4FrontInvisibleGame:
                 unit.cap_capture_time=0
         else:
             bx,by=self.blue_cap
-            bpx=bx*TILE_SIZE + TILE_SIZE/2
-            bpy=by*TILE_SIZE + TILE_SIZE/2
+            bpx=bx*TILE_SIZE+TILE_SIZE/2
+            bpy=by*TILE_SIZE+TILE_SIZE/2
             d=math.hypot(unit.x-bpx, unit.y-bpy)
             if d<UNIT_RADIUS+5:
                 if not self.is_enemy_on_capital("blue"):
@@ -396,22 +424,22 @@ class HOI4FrontInvisibleGame:
 
     def check_victory(self):
         if not self.blue_units:
-            self.victory_label="Victoire Rouge (plus d'unités bleues)!"
-            self.stop_game()
+            self.show_victory_animation("Victoire Rouge (plus d'unités bleues)!")
             return
         if not self.red_units:
-            self.victory_label="Victoire Bleue (plus d'unités rouges)!"
-            self.stop_game()
+            self.show_victory_animation("Victoire Bleue (plus d'unités rouges)!")
             return
-        from Engineering.consts import CAPTURE_TIME
         if self.cap_red_timer>=CAPTURE_TIME:
-            self.victory_label="Victoire Bleue (capitale rouge capturée)!"
-            self.stop_game()
+            self.show_victory_animation("Victoire Bleue (capitale rouge capturée)!")
             return
         if self.cap_blue_timer>=CAPTURE_TIME:
-            self.victory_label="Victoire Rouge (capitale bleue capturée)!"
-            self.stop_game()
+            self.show_victory_animation("Victoire Rouge (capitale bleue capturée)!")
             return
+
+    def show_victory_animation(self, msg):
+        self.victory_label = msg
+        self.victory_mode  = True
+        self.victory_phase = 0
 
     def stop_game(self):
         self.running=False
