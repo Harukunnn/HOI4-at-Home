@@ -29,15 +29,14 @@ def compute_team_zone(grid, cap, forbidden):
     """
     Calcule la zone BFS autour de 'cap', évitant les tuiles 'forbidden'.
     """
-    from collections import deque
-    (cx, cy) = cap
     def in_bounds_local(x, y):
-        return (0 <= x < len(grid[0])) and (0 <= y < len(grid))
+        return (0 <= x < len(grid[0]) and 0 <= y < len(grid))
 
     visited = set()
-    visited.add((cx, cy))
+    visited.add((cap[0], cap[1]))
     q = deque()
-    q.append((cx, cy))
+    q.append((cap[0], cap[1]))
+
     while q:
         x, y = q.popleft()
         for (dx, dy) in [(1,0),(-1,0),(0,1),(0,-1)]:
@@ -67,7 +66,7 @@ def forbidden_mountain_lake_river(grid):
 class HOI4FrontInvisibleGame:
     def __init__(self, root):
         self.root = root
-        self.root.title("HOI4 splitted: main + victory")
+        self.root.title("HOI4 splitted: main + victory + secret counters")
 
         self.top_frame = tk.Frame(self.root, bg="#444444")
         self.top_frame.pack(side="top", fill="x")
@@ -75,7 +74,7 @@ class HOI4FrontInvisibleGame:
         quit_btn = tk.Button(self.top_frame, text="Quitter", command=self.quit_game, fg="white", bg="#AA0000")
         quit_btn.pack(side="left", padx=5, pady=2)
 
-        self.info_label = tk.Label(self.top_frame, text="HOI4 splitted", fg="white", bg="#444444", font=("Arial",12,"bold"))
+        self.info_label = tk.Label(self.top_frame, text="HOI4 splitted + secret counters", fg="white", bg="#444444", font=("Arial",12,"bold"))
         self.info_label.pack(side="left", padx=5)
 
         self.canvas = tk.Canvas(self.root, width=WIDTH, height=HEIGHT, bg="white")
@@ -88,7 +87,7 @@ class HOI4FrontInvisibleGame:
         self.canvas.bind("<KeyPress-Shift_L>", lambda e: self.set_shift(True))
         self.canvas.bind("<KeyRelease-Shift_L>", lambda e: self.set_shift(False))
 
-        # Génération map
+        # Génération de la map
         self.grid = generate_map(NX, NY)
 
         # Capitales
@@ -97,28 +96,28 @@ class HOI4FrontInvisibleGame:
         self.grid[self.blue_cap[1]][self.blue_cap[0]] = T_PLAIN
         self.grid[self.red_cap[1]][self.red_cap[0]]   = T_PLAIN
 
-        # Unités
-        self.blue_units=[]
-        self.red_units=[]
+        # Création d'unités
+        self.blue_units = []
+        self.red_units  = []
         self.create_initial_units("blue",10)
         self.create_initial_units("red",10)
-        self.all_units=self.blue_units+self.red_units
+        self.all_units = self.blue_units + self.red_units
 
-        self.ai_red=AI("red")
+        self.ai_red = AI("red")
 
-        self.running=True
-        self.frame_count=0
-        self.selected_units=[]
-        self.dragging=False
-        self.drag_start=(0,0)
-        self.drag_end=(0,0)
-        self.victory_label=None
+        self.running = True
+        self.frame_count = 0
+        self.selected_units = []
+        self.dragging = False
+        self.drag_start = (0, 0)
+        self.drag_end = (0, 0)
+        self.victory_label = None
 
-        self.start_time=time.time()
-        self.game_started=False
-        self.play_start_time=0
+        self.start_time = time.time()
+        self.game_started = False
+        self.play_start_time = 0
 
-        # Front
+        # Ligne de front
         self.front_points = generate_initial_front(num_points=25)
 
         # Timers de capture
@@ -126,15 +125,25 @@ class HOI4FrontInvisibleGame:
         self.cap_blue_timer = 0.0
 
         # Phase de placement initial
-        self.placement_phase=True
+        self.placement_phase = True
 
         # BFS zone
-        self.blue_zone = compute_team_zone(self.grid, self.blue_cap,  forbidden_mountain_lake_river(self.grid))
-        self.red_zone  = compute_team_zone(self.grid, self.red_cap,   forbidden_mountain_lake_river(self.grid))
+        self.blue_zone = compute_team_zone(
+            self.grid, self.blue_cap,
+            forbidden_mountain_lake_river(self.grid)
+        )
+        self.red_zone  = compute_team_zone(
+            self.grid, self.red_cap,
+            forbidden_mountain_lake_river(self.grid)
+        )
 
         self.ai_place_red_units()
 
-        # Binds
+        # --- Secret counters ---
+        self._blue_count = len(self.blue_units)
+        self._red_count  = len(self.red_units)
+        # -----------------------
+
         self.canvas.bind("<Button-1>", self.on_left_press)
         self.canvas.bind("<B1-Motion>", self.on_left_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_left_release)
@@ -147,13 +156,13 @@ class HOI4FrontInvisibleGame:
         self.root.quit()
 
     def set_shift(self, val):
-        self.shift_held=val
+        self.shift_held = val
 
     def create_initial_units(self, team, number):
-        cx,cy = (self.blue_cap if team=="blue" else self.red_cap)
+        cx, cy = (self.blue_cap if team=="blue" else self.red_cap)
         for _ in range(number):
-            px = cx*TILE_SIZE+TILE_SIZE/2
-            py = cy*TILE_SIZE+TILE_SIZE/2
+            px = cx*TILE_SIZE + TILE_SIZE/2
+            py = cy*TILE_SIZE + TILE_SIZE/2
             u = Unit(px,py,team)
             if team=="blue":
                 self.blue_units.append(u)
@@ -164,8 +173,8 @@ class HOI4FrontInvisibleGame:
         if not self.red_zone or not self.red_units:
             return
         bx = sum(u.x for u in self.blue_units)/len(self.blue_units)
-        tile_bx=int(bx//TILE_SIZE)
-        zone_list=list(self.red_zone)
+        tile_bx = int(bx//TILE_SIZE)
+        zone_list = list(self.red_zone)
         if tile_bx<NX//2:
             zone_list.sort(key=lambda p: p[0], reverse=True)
         else:
@@ -180,7 +189,7 @@ class HOI4FrontInvisibleGame:
 
     def is_unit_in_enemy_zone(self, unit):
         """
-        Fournit la méthode manquante, pour units.py => if game.is_unit_in_enemy_zone(self):
+        Rétablit la méthode manquante, pour units.py => if game.is_unit_in_enemy_zone(self):
         """
         side = check_side(self.front_points, unit.x, unit.y)
         if unit.team=="blue":
@@ -190,7 +199,7 @@ class HOI4FrontInvisibleGame:
 
     def update_capital_capture(self, unit):
         """
-        Fournit la méthode manquante, pour units.py => game.update_capital_capture(self)
+        Rétablit la méthode pour units.py => game.update_capital_capture(self)
         => on appelle la fonction victory.update_capital_capture
         """
         from Engineering.victory import update_capital_capture
@@ -200,14 +209,14 @@ class HOI4FrontInvisibleGame:
         if not self.running:
             return
 
-        now=time.time()
-        dt=now-self.start_time
-        if dt>=INITIAL_DELAY and self.placement_phase:
+        now = time.time()
+        dt  = now - self.start_time
+        if dt >= INITIAL_DELAY and self.placement_phase:
             self.placement_phase=False
             self.game_started=True
             self.play_start_time=time.time()
 
-        movement_allowed=(not self.placement_phase)
+        movement_allowed = (not self.placement_phase)
 
         if self.game_started:
             self.ai_red.update(self, movement_allowed)
@@ -228,18 +237,22 @@ class HOI4FrontInvisibleGame:
         for u in self.all_units:
             u.update(self, self.all_units, self.grid, movement_allowed)
 
-        # Check morts
+        # Nettoyage: supprime morts/encircled => on met à jour nos compteurs secrets
         dead=[]
         for un in self.all_units:
             if un.encircled_ticks>ENCIRCLED_TICK_LIMIT or un.hp<=0:
                 dead.append(un)
+
         for du in dead:
             if du in self.all_units:
                 self.all_units.remove(du)
                 if du in self.blue_units:
                     self.blue_units.remove(du)
+                    # SECRET COUNTER : décrément
+                    self._blue_count -= 1
                 else:
                     self.red_units.remove(du)
+                    self._red_count -= 1
                 if du in self.selected_units:
                     self.selected_units.remove(du)
 
@@ -283,10 +296,10 @@ class HOI4FrontInvisibleGame:
                 )
 
         # Capitals
-        rpx = self.red_cap[0]*TILE_SIZE + TILE_SIZE/2
-        rpy = self.red_cap[1]*TILE_SIZE + TILE_SIZE/2
-        bpx = self.blue_cap[0]*TILE_SIZE + TILE_SIZE/2
-        bpy = self.blue_cap[1]*TILE_SIZE + TILE_SIZE/2
+        rpx=self.red_cap[0]*TILE_SIZE+TILE_SIZE/2
+        rpy=self.red_cap[1]*TILE_SIZE+TILE_SIZE/2
+        bpx=self.blue_cap[0]*TILE_SIZE+TILE_SIZE/2
+        bpy=self.blue_cap[1]*TILE_SIZE+TILE_SIZE/2
         self.draw_star(rpx,rpy,STAR_SIZE,COLOR_RED)
         self.draw_star(bpx,bpy,STAR_SIZE,COLOR_BLUE)
 
@@ -312,6 +325,7 @@ class HOI4FrontInvisibleGame:
             txt=f"Time : {int(e)}s"
             self.canvas.create_text(10,10,text=txt,anchor="nw",fill="white",font=("Arial",14,"bold"))
 
+        # Timers capture
         if self.cap_red_timer>0:
             leftC = CAPTURE_TIME - self.cap_red_timer
             if leftC<0:leftC=0
@@ -398,19 +412,19 @@ class HOI4FrontInvisibleGame:
             y1,y2=sorted([sy,ey])
             if not self.shift_held:
                 self.clear_selection()
-            for u in self.blue_units:
-                if x1<=u.x<=x2 and y1<=u.y<=y2:
-                    u.is_selected=True
-                    if u not in self.selected_units:
-                        self.selected_units.append(u)
+            for un in self.blue_units:
+                if x1<=un.x<=x2 and y1<=un.y<=y2:
+                    un.is_selected=True
+                    if un not in self.selected_units:
+                        self.selected_units.append(un)
 
     def handle_click(self,mx,my):
         import math
         clicked_unit=None
-        for u in self.all_units:
-            d=math.hypot(u.x-mx, u.y-my)
+        for un in self.all_units:
+            d=math.hypot(un.x-mx, un.y-my)
             if d<=UNIT_RADIUS+2:
-                clicked_unit=u
+                clicked_unit=un
                 break
         if clicked_unit:
             if clicked_unit.team!="blue":
@@ -445,8 +459,8 @@ class HOI4FrontInvisibleGame:
         self.clear_selection()
 
     def clear_selection(self):
-        for u in self.selected_units:
-            u.is_selected=False
+        for un in self.selected_units:
+            un.is_selected=False
         self.selected_units=[]
 
 def main():
