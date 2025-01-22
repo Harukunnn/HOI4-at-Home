@@ -39,13 +39,13 @@ def add_front_points_on_cross(front_points, xC, yC):
     newp = (xC + dx, yC + dy)
     front_points.insert(best_i, newp)
 
-    # On ajoute éventuellement un second point pour plus de variété
+    # Optionnel : on ajoute un second point pour plus de variété
     if random.random() < 0.5:
         dx2 = random.uniform(-20, 20)
         dy2 = random.uniform(-20, 20)
         front_points.insert(best_i, (xC + dx2, yC + dy2))
 
-    # On limite la taille de la liste
+    # On limite la taille totale si la liste devient trop grande
     if len(front_points) > 50:
         idx = random.randint(len(front_points)//2, len(front_points)-1)
         front_points.pop(idx)
@@ -61,8 +61,9 @@ def update_front_line(
 ):
     """
     Fait évoluer la ligne de front dans le temps, en “poussant”
-    chaque point vers la moyenne des unités proches (< influence_radius).
-
+    chaque point vers la moyenne pondérée (inverse distance) des unités
+    proches (< influence_radius).
+    
     Paramètres:
     - dt : delta time (ex: 1.0/FPS ou 1.0)
     - influence_radius : distance max (pixels) d’influence d’une unité
@@ -70,35 +71,41 @@ def update_front_line(
     - smooth_passes : nb de passes de lissage final
     - beautify : si True, applique un spline Catmull-Rom pour un rendu plus doux
 
-    Cette fonction ne requiert AUCUNE modification dans d’autres scripts.
+    Aucune modification des autres scripts n’est requise.
     """
     if len(front_points) < 2 or not units:
         return
 
-    new_front = []
-    # Pour optimiser, on évite la racine carrée en comparant dist^2 < radius^2
     rad2 = influence_radius**2
+    new_front = []
 
     for (fx, fy) in front_points:
-        close_units = []
+        sum_w  = 0.0
+        sum_xw = 0.0
+        sum_yw = 0.0
+
+        # Recherche d'unités dans un rayon influence_radius
         for u in units:
             dx = (u.x - fx)
             dy = (u.y - fy)
             dist2 = dx*dx + dy*dy
             if dist2 < rad2:
-                close_units.append(u)
+                # On utilise un poids inversé par la distance^2 + petite constante
+                w = 1.0 / (dist2 + 1.0)
+                sum_w  += w
+                sum_xw += w * u.x
+                sum_yw += w * u.y
 
-        if not close_units:
+        if sum_w < 1e-9:
+            # Aucune unité proche => on ne bouge pas ce point
             new_front.append((fx, fy))
             continue
 
-        # moyenne (mx, my)
-        sx = sum(u.x for u in close_units)
-        sy = sum(u.y for u in close_units)
-        n = len(close_units)
-        mx = sx / n
-        my = sy / n
+        # Moyenne pondérée
+        mx = sum_xw / sum_w
+        my = sum_yw / sum_w
 
+        # On “pousse” (fx,fy) vers (mx,my)
         dx = mx - fx
         dy = my - fy
         new_fx = fx + dx * push_strength * dt
@@ -108,7 +115,7 @@ def update_front_line(
     # Lissage local
     new_front = smooth_front(new_front, passes=smooth_passes)
 
-    # Optionnel : Catmull-Rom pour un rendu plus fluide
+    # Optionnel : Catmull-Rom pour un rendu plus doux
     if beautify and len(new_front) >= 4:
         new_front = catmull_rom_spline(new_front, steps=6)
 
@@ -117,19 +124,19 @@ def update_front_line(
 def smooth_front(points, passes=1):
     """
     Lissage local par moyenne glissante: chaque point devient
-    la moyenne de lui-même + ses 2 voisins.
+    la moyenne de lui-même et de ses 2 voisins.
     """
     if len(points) < 3:
         return points
 
-    result = points[:]
+    result = list(points)
     for _ in range(passes):
-        tmp = [result[0]]  # le premier reste tel quel
+        tmp = [result[0]]
         for i in range(1, len(result) - 1):
             px = (result[i-1][0] + result[i][0] + result[i+1][0]) / 3
             py = (result[i-1][1] + result[i][1] + result[i+1][1]) / 3
             tmp.append((px, py))
-        tmp.append(result[-1])  # le dernier reste
+        tmp.append(result[-1])
         result = tmp
     return result
 
@@ -142,7 +149,6 @@ def catmull_rom_spline(pts, steps=10):
         return pts
 
     new_pts = []
-    # On parcourt tous les segments
     for i in range(len(pts) - 1):
         p0 = pts[max(i-1, 0)]
         p1 = pts[i]
@@ -152,7 +158,6 @@ def catmull_rom_spline(pts, steps=10):
             tau = t / float(steps)
             x, y = catmull_rom_position(p0, p1, p2, p3, tau)
             new_pts.append((x, y))
-    # On ajoute le dernier point
     new_pts.append(pts[-1])
     return new_pts
 
@@ -160,7 +165,7 @@ def catmull_rom_position(p0, p1, p2, p3, t, alpha=0.5):
     """
     Retourne la position (x, y) sur la Catmull-Rom Spline
     entre p1 et p2, pour t in [0..1].
-    alpha=0.5 => centripetal spline plus stable.
+    alpha=0.5 => centripetal, plus stable.
     """
     x0, y0 = p0
     x1, y1 = p1
@@ -170,11 +175,11 @@ def catmull_rom_position(p0, p1, p2, p3, t, alpha=0.5):
     t2 = t*t
     t3 = t2*t
 
-    # coefficients standard
+    # coefficients standard (forme simplifiée)
     a0 = -0.5*t3 + t2 - 0.5*t
-    a1 = 1.5*t3 - 2.5*t2 + 1.0
+    a1 =  1.5*t3 - 2.5*t2 + 1.0
     a2 = -1.5*t3 + 2.0*t2 + 0.5*t
-    a3 = 0.5*t3 - 0.5*t2
+    a3 =  0.5*t3 - 0.5*t2
 
     x = a0*x0 + a1*x1 + a2*x2 + a3*x3
     y = a0*y0 + a1*y1 + a2*y2 + a3*y3
@@ -183,9 +188,9 @@ def catmull_rom_position(p0, p1, p2, p3, t, alpha=0.5):
 def check_side(front_points, xU, yU):
     """
     Détermine si (xU,yU) est à gauche ou à droite du front.
-    On divise front_points en deux: 'above' (y < yU) et 'below' (y >= yU).
+    On divise front_points en deux: 'above' (fy<yU) / 'below' (fy>=yU).
     On prend pA = max(above, y) et pB=min(below, y),
-    on interpole la coord x midx => si xU < midx => "left" sinon "right".
+    on interpole la coord x => si xU < midx => "left" sinon "right".
     """
     above = []
     below = []
@@ -198,8 +203,8 @@ def check_side(front_points, xU, yU):
     if not above or not below:
         return "left"
 
-    pA = max(above, key=lambda pt: pt[1])  # plus grand y
-    pB = min(below, key=lambda pt: pt[1])  # plus petit y
+    pA = max(above, key=lambda pt: pt[1])
+    pB = min(below, key=lambda pt: pt[1])
     dy = pB[1] - pA[1]
     if abs(dy) < 1e-9:
         midx = (pA[0] + pB[0]) / 2
