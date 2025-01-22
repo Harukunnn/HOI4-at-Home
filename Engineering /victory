@@ -4,21 +4,13 @@ import math
 from .pathfinding import distance
 from .consts import FPS, TILE_SIZE, UNIT_RADIUS
 
-CAPTURE_RADIUS = 50.0  # On garde la logique de 50 px
-CAPTURE_TIME   = 10.0  # On garde la logique de 10 s
+# Valeurs existantes
+CAPTURE_TIME   = 10.0
+CAPTURE_RADIUS = 50.0  # si besoin
 
 def update_capital_capture(game, unit):
     """
-    Gère la capture de capitale par 'unit',
-    sans exiger de changement dans le reste du code.
-
-    On conserve la logique de l'ex-script:
-    - Si unit est bleue, on check la capitale rouge, etc.
-    - On incrémente unit.cap_capture_time si on est < CAPTURE_RADIUS
-      ET qu'aucun défenseur n'est à < CAPTURE_RADIUS.
-    - Sinon, on reset.
-    - On met à jour game.cap_red_timer ou game.cap_blue_timer
-      selon le cas.
+    Gère la capture de la capitale par 'unit'.
     """
     if unit.team == "blue":
         rx, ry = game.red_cap
@@ -28,12 +20,12 @@ def update_capital_capture(game, unit):
         if d < CAPTURE_RADIUS:
             if not is_enemy_on_capital(game, "red"):
                 unit.cap_capture_time += 1.0/FPS
-                if unit.cap_capture_time > game.cap_red_timer:
-                    game.cap_red_timer = unit.cap_capture_time
+                if unit.cap_capture_time>game.cap_red_timer:
+                    game.cap_red_timer=unit.cap_capture_time
             else:
-                unit.cap_capture_time = 0
+                unit.cap_capture_time=0
         else:
-            unit.cap_capture_time = 0
+            unit.cap_capture_time=0
     else:
         bx, by = game.blue_cap
         cx = bx*TILE_SIZE + TILE_SIZE/2
@@ -41,51 +33,51 @@ def update_capital_capture(game, unit):
         d  = distance(unit.x, unit.y, cx, cy)
         if d < CAPTURE_RADIUS:
             if not is_enemy_on_capital(game, "blue"):
-                unit.cap_capture_time += 1.0/FPS
-                if unit.cap_capture_time > game.cap_blue_timer:
-                    game.cap_blue_timer = unit.cap_capture_time
+                unit.cap_capture_time+=1.0/FPS
+                if unit.cap_capture_time>game.cap_blue_timer:
+                    game.cap_blue_timer=unit.cap_capture_time
             else:
-                unit.cap_capture_time = 0
+                unit.cap_capture_time=0
         else:
-            unit.cap_capture_time = 0
+            unit.cap_capture_time=0
 
 def is_enemy_on_capital(game, cap_team):
     """
-    Check si la capitale de 'cap_team' est défendue par au moins 1 unité
-    à < CAPTURE_RADIUS.
+    Vérifie si la capitale 'cap_team' est défendue 
+    par au moins 1 unité de la même team à < CAPTURE_RADIUS.
     """
     if cap_team == "red":
-        rx, ry  = game.red_cap
+        rx, ry   = game.red_cap
         cx       = rx*TILE_SIZE + TILE_SIZE/2
         cy       = ry*TILE_SIZE + TILE_SIZE/2
-        defenders = game.red_units
+        defenders= game.red_units
     else:
-        bx, by  = game.blue_cap
+        bx, by   = game.blue_cap
         cx       = bx*TILE_SIZE + TILE_SIZE/2
         cy       = by*TILE_SIZE + TILE_SIZE/2
-        defenders = game.blue_units
+        defenders= game.blue_units
 
     for u in defenders:
-        if distance(u.x, u.y, cx, cy) < CAPTURE_RADIUS:
+        if distance(u.x,u.y, cx,cy) < CAPTURE_RADIUS:
             return True
     return False
 
 def check_victory(game):
     """
-    Vérifie si une condition de victoire est atteinte:
-    - plus d'unités bleues => rouge win
-    - plus d'unités rouges => bleu win
-    - capital rouge capturée => bleu win
-    - capital bleue capturée => rouge win
-
-    On modifie la variable game.victory_label pour l'afficher
-    (pas besoin de changer ailleurs).
+    Vérifie la victoire en tenant compte:
+      - counters secrets _blue_count et _red_count
+      - timers de capture capital
+    Met game.victory_label si une condition est atteinte.
     """
-    if not game.blue_units:
-        game.victory_label = "Victoire Rouge (plus de bleus)!"
-    if not game.red_units:
-        game.victory_label = "Victoire Bleue (plus de rouges)!"
+    # 1) si _blue_count=0 => rouge gagne
+    if game._blue_count <= 0:
+        game.victory_label="Victoire Rouge (plus de bleus)!"
+    # 2) si _red_count=0 => bleu gagne
+    if game._red_count <= 0:
+        game.victory_label="Victoire Bleue (plus de rouges)!"
+    # 3) si capital rouge capturée => bleu gagne
     if game.cap_red_timer >= CAPTURE_TIME:
-        game.victory_label = "Victoire Bleue (capitale rouge)!"
+        game.victory_label="Victoire Bleue (capitale rouge)!"
+    # 4) si capital bleue capturée => rouge gagne
     if game.cap_blue_timer >= CAPTURE_TIME:
-        game.victory_label = "Victoire Rouge (capitale bleue)!"
+        game.victory_label="Victoire Rouge (capitale bleue)!"
